@@ -5,14 +5,20 @@ async function getWinId(){
   const obj = await chrome.storage.local.get([WIN_ID_KEY]);
   return obj[WIN_ID_KEY] ?? null;
 }
-async function setWinId(id){ await chrome.storage.local.set({[WIN_ID_KEY]: id}); }
+async function setWinId(id){
+  await chrome.storage.local.set({ [WIN_ID_KEY]: id });
+}
 async function clearWinId(){ await chrome.storage.local.remove([WIN_ID_KEY]); }
 async function getBounds(){
   const obj = await chrome.storage.local.get([WIN_KEY]);
   return obj[WIN_KEY] ?? null;
 }
-async function saveBounds(b){ await chrome.storage.local.set({[WIN_KEY]: b}); }
-async function clearBounds(){ await chrome.storage.local.remove([WIN_KEY]); }
+async function saveBounds(b){
+  await chrome.storage.local.set({ [WIN_KEY]: b });
+}
+async function clearBounds(){
+  await chrome.storage.local.remove([WIN_KEY]);
+}
 
 function setMsg(t, isErr=false){
   const el=document.getElementById("msg");
@@ -78,7 +84,7 @@ async function openWindow(){
     await setWinId(win.id);
     try{
       const w = await chrome.windows.get(win.id);
-      await saveBounds({left:w.left, top:w.top, width:w.width, height:w.height});
+      await saveBounds({ left:w.left, top:w.top, width:w.width, height:w.height });
     }catch(e){}
     window.close();
   }catch(e){
