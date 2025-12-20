@@ -62,13 +62,17 @@ async function computeCreateData(){
   return data;
 }
 
+let opening = false;
 async function openWindow(){
-  setMsg("正在打开…");
-  if(await focusExisting()){
-    window.close(); return;
-  }
-  const createData = await computeCreateData();
+  if(opening) return;
+  opening = true;
   try{
+    setMsg("正在打开…");
+    if(await focusExisting()){
+      window.close();
+      return;
+    }
+    const createData = await computeCreateData();
     const win = await chrome.windows.create(createData);
     if(win?.id == null) throw new Error("windows.create returned no id");
     await setWinId(win.id);
@@ -81,7 +85,10 @@ async function openWindow(){
     await clearBounds();
     console.error(e);
     setMsg("打开失败：请确认扩展已授予 windows 权限，且未被系统/策略拦截弹窗。", true);
+  }finally{
+    opening = false;
   }
 }
 
 document.getElementById("open").addEventListener("click", openWindow);
+openWindow();
