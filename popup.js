@@ -5,14 +5,20 @@ async function getWinId(){
   const obj = await chrome.storage.local.get([WIN_ID_KEY]);
   return obj[WIN_ID_KEY] ?? null;
 }
-async function setWinId(id){ await chrome.storage.local.set({[WIN_ID_KEY]: id}); }
+async function setWinId(id){
+  await chrome.storage.local.set({ [WIN_ID_KEY]: id });
+}
 async function clearWinId(){ await chrome.storage.local.remove([WIN_ID_KEY]); }
 async function getBounds(){
   const obj = await chrome.storage.local.get([WIN_KEY]);
   return obj[WIN_KEY] ?? null;
 }
-async function saveBounds(b){ await chrome.storage.local.set({[WIN_KEY]: b}); }
-async function clearBounds(){ await chrome.storage.local.remove([WIN_KEY]); }
+async function saveBounds(b){
+  await chrome.storage.local.set({ [WIN_KEY]: b });
+}
+async function clearBounds(){
+  await chrome.storage.local.remove([WIN_KEY]);
+}
 
 function setMsg(t, isErr=false){
   const el=document.getElementById("msg");
@@ -37,20 +43,23 @@ async function focusExisting(){
 
 async function computeCreateData(){
   const saved = await getBounds();
-  const width = saved?.width ?? 520;
-  const height = saved?.height ?? 680;
+  const width = Number.isFinite(saved?.width) ? saved.width : 520;
+  const height = Number.isFinite(saved?.height) ? saved.height : 680;
 
-  let left, top;
-  try{
-    const cur = await chrome.windows.getCurrent();
-    const pad=24;
-    if(cur && typeof cur.left==="number" && typeof cur.width==="number"){
-      left = Math.max(0, cur.left + cur.width - width - pad);
-    }
-    if(cur && typeof cur.top==="number"){
-      top = Math.max(0, cur.top + pad);
-    }
-  }catch(e){}
+  let left = Number.isFinite(saved?.left) ? saved.left : undefined;
+  let top = Number.isFinite(saved?.top) ? saved.top : undefined;
+  if(left === undefined || top === undefined){
+    try{
+      const cur = await chrome.windows.getCurrent();
+      const pad=24;
+      if(cur && typeof cur.left==="number" && typeof cur.width==="number"){
+        left = Math.max(0, cur.left + cur.width - width - pad);
+      }
+      if(cur && typeof cur.top==="number"){
+        top = Math.max(0, cur.top + pad);
+      }
+    }catch(e){}
+  }
 
   const url = chrome.runtime.getURL("editor.html");
   const data = { url, type:"popup", width, height };
@@ -59,26 +68,18 @@ async function computeCreateData(){
   return data;
 }
 
+let opening = false;
 async function openWindow(){
-  setMsg("正在打开…");
-  if(await focusExisting()){
-    window.close(); return;
-  }
-  const createData = await computeCreateData();
+  if(opening) return;
+  opening = true;
   try{
-    const win = await chrome.windows.create(createData);
-    if(win?.id == null) throw new Error("windows.create returned no id");
-    await setWinId(win.id);
-    try{
-      const w = await chrome.windows.get(win.id);
-      await saveBounds({left:w.left, top:w.top, width:w.width, height:w.height});
-    }catch(e){}
-    window.close();
-  }catch(e){
-    await clearBounds();
-    console.error(e);
-    setMsg("打开失败：请确认扩展已授予 windows 权限，且未被系统/策略拦截弹窗。", true);
+    setMsg("正在打开…");
+    await chrome.runtime.sendMessage({ type: "dw-open-floating" });
+    setMsg("已请求打开浮窗，可直接关闭此页。");
+  }finally{
+    opening = false;
   }
 }
 
 document.getElementById("open").addEventListener("click", openWindow);
+openWindow();
