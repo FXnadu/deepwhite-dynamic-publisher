@@ -1,11 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Deepwhite Dynamic Publisher (Mock)",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Lightweight editor for Deepwhite 11ty dynamic journals. UI matches site style. Publish is mocked.",
   "action": {
-    "default_title": "New Dynamic Journal",
-    "default_popup": "popup.html"
+    "default_title": "New Dynamic Journal"
   },
   "icons": {
     "16": "icon16.png",
