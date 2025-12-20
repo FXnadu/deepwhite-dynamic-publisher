@@ -37,20 +37,23 @@ async function focusExisting(){
 
 async function computeCreateData(){
   const saved = await getBounds();
-  const width = saved?.width ?? 520;
-  const height = saved?.height ?? 680;
+  const width = Number.isFinite(saved?.width) ? saved.width : 520;
+  const height = Number.isFinite(saved?.height) ? saved.height : 680;
 
-  let left, top;
-  try{
-    const cur = await chrome.windows.getCurrent();
-    const pad=24;
-    if(cur && typeof cur.left==="number" && typeof cur.width==="number"){
-      left = Math.max(0, cur.left + cur.width - width - pad);
-    }
-    if(cur && typeof cur.top==="number"){
-      top = Math.max(0, cur.top + pad);
-    }
-  }catch(e){}
+  let left = Number.isFinite(saved?.left) ? saved.left : undefined;
+  let top = Number.isFinite(saved?.top) ? saved.top : undefined;
+  if(left === undefined || top === undefined){
+    try{
+      const cur = await chrome.windows.getCurrent();
+      const pad=24;
+      if(cur && typeof cur.left==="number" && typeof cur.width==="number"){
+        left = Math.max(0, cur.left + cur.width - width - pad);
+      }
+      if(cur && typeof cur.top==="number"){
+        top = Math.max(0, cur.top + pad);
+      }
+    }catch(e){}
+  }
 
   const url = chrome.runtime.getURL("editor.html");
   const data = { url, type:"popup", width, height };
