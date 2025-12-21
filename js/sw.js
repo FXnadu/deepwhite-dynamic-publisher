@@ -1,5 +1,15 @@
+function ensureActionHasNoPopup() {
+  try {
+    chrome.action.setPopup({ popup: "" });
+  } catch (e) {
+    // noop
+  }
+}
+
+ensureActionHasNoPopup();
+
 chrome.runtime.onInstalled.addListener(() => {
-  // noop
+  ensureActionHasNoPopup();
 });
 
 const WIN_KEY = "dw_float_bounds_v1";

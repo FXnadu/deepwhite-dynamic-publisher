@@ -15,11 +15,10 @@ Chrome 浏览器扩展，用于快速编写和发布 Deepwhite 11ty 动态日志
 
 ### 2. 测试步骤
 
-#### 测试 Popup 页面
+#### 测试图标点击
 1. 点击浏览器工具栏中的扩展图标
-2. 应该会弹出一个小窗口，显示 "Deepwhite dynamic journal"
-3. 点击 "打开浮窗编辑器" 按钮
-4. 应该会打开一个新的编辑器窗口
+2. 应该会直接打开编辑器浮窗窗口（无需经过弹出层）
+3. 如果浮窗已存在，应自动聚焦到该窗口
 
 #### 测试 Editor 页面
 1. 编辑器窗口打开后，测试以下功能：
@@ -51,10 +50,9 @@ Chrome 浏览器扩展，用于快速编写和发布 Deepwhite 11ty 动态日志
 ### 3. 调试方法
 
 #### 查看 Console 日志
-- **Popup 页面**：右键点击扩展图标 → **检查弹出内容**（Inspect popup）
 - **Editor 页面**：在编辑器窗口中按 `F12` 或右键 → **检查**
 - **Options 页面**：在设置页面按 `F12` 或右键 → **检查**
-- **Service Worker**：在 `chrome://extensions/` 页面，找到扩展，点击 **service worker** 链接
+- **Service Worker / 点击图标逻辑**：在 `chrome://extensions/` 页面，找到扩展，点击 **service worker** 链接
 
 #### 查看存储数据
 在 Console 中运行：
@@ -108,14 +106,14 @@ chrome.storage.sync.clear();
 ```
 deepwhite-dynamic-publisher/
 ├── manifest.json          # 扩展配置文件
-├── popup.html            # 弹出窗口页面
+├── popup.html            # 备用弹出页面（当前点击图标直接打开编辑器）
 ├── editor.html           # 编辑器页面
 ├── options.html          # 设置页面
 ├── css/
 │   └── common.css        # 公共样式
 ├── js/
 │   ├── utils.js          # 工具函数
-│   ├── popup.js          # 弹出窗口逻辑
+│   ├── popup.js          # 弹出窗口逻辑（备用）
 │   ├── editor.js         # 编辑器逻辑
 │   ├── options.js        # 设置页面逻辑
 │   └── sw.js             # Service Worker
@@ -128,4 +126,3 @@ deepwhite-dynamic-publisher/
 - 所有数据存储在 Chrome 的 `chrome.storage` API 中
 - 使用 ES6 模块化开发
 - UI 样式对齐 Deepwhite 站点风格
-
