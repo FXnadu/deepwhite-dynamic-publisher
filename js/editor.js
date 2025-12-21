@@ -1,4 +1,4 @@
-import { showToast, showConfirm, formatDate, formatTime, debounce, countChars, countWords, setButtonLoading, getSavedDirectoryHandle, githubPutFile } from './utils.js';
+import { showToast, showConfirm, formatDate, formatTime, debounce, countChars, countWords, setButtonLoading, getSavedDirectoryHandle, githubPutFile, parseRepoUrl } from './utils.js';
 
 const DRAFT_KEY = "dw_draft_v1";
 const SETTINGS_KEY = "dw_settings_v1";
@@ -46,23 +46,21 @@ async function loadSettings() {
   try {
     const obj = await chrome.storage.sync.get([SETTINGS_KEY]);
     return obj[SETTINGS_KEY] || {
-      repoOwner: "FXnadu",
-      repoName: "deepwhite-11ty",
+      repoUrl: "FXnadu/deepwhite-11ty",
       branch: "main",
       targetDir: "src/content/posts/dynamic/journals",
       commitPrefix: "dynamic:",
-      mode: "simulate"
+      push: false
     };
   } catch (error) {
     console.error("加载设置失败:", error);
     showToast("加载设置失败", "error");
     return {
-      repoOwner: "FXnadu",
-      repoName: "deepwhite-11ty",
+      repoUrl: "FXnadu/deepwhite-11ty",
       branch: "main",
       targetDir: "src/content/posts/dynamic/journals",
       commitPrefix: "dynamic:",
-      mode: "simulate"
+      push: false
     };
   }
 }
@@ -222,7 +220,7 @@ function tick() {
       }
 
       let localSaveOk = false;
-      let pushOk = settings.mode !== 'local-and-push';
+      let pushOk = !settings.push;
 
       setButtonLoading(publishAndPushBtn, true);
       setStatus("正在保存并推送…", "status-ok");
@@ -248,7 +246,7 @@ function tick() {
         }
 
         // 2) 依据 mode 决定是否推送
-        if (settings.mode === 'local-and-push') {
+        if (settings.push) {
           try {
             const tokenObj = await chrome.storage.local.get(['dw_github_token_v1']);
             const token = tokenObj['dw_github_token_v1'];
@@ -256,9 +254,11 @@ function tick() {
 
             const contentBase64 = btoa(unescape(encodeURIComponent(body)));
             const commitMessage = `${settings.commitPrefix || 'dynamic:'} ${filename}`;
+            const parsed = parseRepoUrl(settings.repoUrl || '');
+            if (!parsed) throw new Error('无效的仓库地址，请在设置中使用 owner/repo 或完整 URL');
             await githubPutFile({
-              owner: settings.repoOwner,
-              repo: settings.repoName,
+              owner: parsed.owner,
+              repo: parsed.repo,
               path,
               branch: settings.branch,
               message: commitMessage,
@@ -273,12 +273,9 @@ function tick() {
             pushOk = false;
             setStatus("远程推送失败，请检查 GitHub 配置或 token", "status-warn");
           }
-        } else if (settings.mode === 'simulate') {
-          const preview = `将创建：${path}\n提交信息：${settings.commitPrefix} ${filename}\n\n---\n${body.substring(0, 280)}${body.length > 280 ? "…" : ""}`;
-          await showConfirm("发表预览（模拟）", preview, "确认发表", "取消");
-          showToast("已模拟发表", "success");
-        } else if (settings.mode === 'local-only') {
-          showToast("当前 Mode 为仅本地保存，已完成本地保存（未推送）", "success");
+        } else {
+          // settings.push === false -> local-only
+          showToast("当前为仅本地保存，已完成本地保存（未推送）", "success");
         }
 
         // 清空草稿并更新 UI（本地保存已完成）
@@ -289,13 +286,12 @@ function tick() {
 
         const finalStatus = (() => {
           if (!localSaveOk) return "本地保存未完成，请检查设置";
-          if (settings.mode === 'local-and-push') {
+          if (settings.push) {
             return pushOk ? "已发表（本地+远程）" : "本地保存完成，远程推送失败";
           }
-          if (settings.mode === 'local-only') return "已保存到本地";
-          return "已模拟发表";
+          return "已保存到本地";
         })();
-        const finalClass = (!localSaveOk || (settings.mode === 'local-and-push' && !pushOk)) ? "status-warn" : "status-success";
+        const finalClass = (!localSaveOk || (settings.push && !pushOk)) ? "status-warn" : "status-success";
         setStatus(finalStatus, finalClass);
       } catch (error) {
         console.error("发表失败:", error);

@@ -1,4 +1,4 @@
-import { showToast, setButtonLoading } from './utils.js';
+import { showToast, setButtonLoading, parseRepoUrl } from './utils.js';
 
 const SETTINGS_KEY = "dw_settings_v1";
 const FOLDER_DB_KEY = "dw_folder_handle_v1";
@@ -8,23 +8,21 @@ async function load() {
   try {
     const obj = await chrome.storage.sync.get([SETTINGS_KEY]);
     return obj[SETTINGS_KEY] || {
-      repoOwner: "FXnadu",
-      repoName: "deepwhite-11ty",
+      repoUrl: "FXnadu/deepwhite-11ty",
       branch: "main",
       targetDir: "src/content/posts/dynamic/journals",
       commitPrefix: "dynamic:",
-      mode: "simulate"
+      push: false
     };
   } catch (error) {
     console.error("加载设置失败:", error);
     showToast("加载设置失败", "error");
     return {
-      repoOwner: "FXnadu",
-      repoName: "deepwhite-11ty",
+      repoUrl: "FXnadu/deepwhite-11ty",
       branch: "main",
       targetDir: "src/content/posts/dynamic/journals",
       commitPrefix: "dynamic:",
-      mode: "simulate"
+      push: false
     };
   }
 }
@@ -40,13 +38,11 @@ async function save(settings) {
 
 function validateSettings(settings) {
   const errors = [];
-  
-  if (!settings.repoOwner || !settings.repoOwner.trim()) {
-    errors.push("仓库所有者不能为空");
-  }
-  
-  if (!settings.repoName || !settings.repoName.trim()) {
-    errors.push("仓库名称不能为空");
+  if (!settings.repoUrl || !settings.repoUrl.trim()) {
+    errors.push("仓库地址不能为空");
+  } else {
+    const parsed = parseRepoUrl(settings.repoUrl.trim());
+    if (!parsed) errors.push("仓库地址格式不正确，示例：owner/repo 或 https://github.com/owner/repo");
   }
   
   if (!settings.branch || !settings.branch.trim()) {
@@ -66,32 +62,40 @@ function validateSettings(settings) {
 }
 
 (async function init() {
-  const repoOwner = document.getElementById("repoOwner");
-  const repoName = document.getElementById("repoName");
+  const repoUrl = document.getElementById("repoUrl");
   const branch = document.getElementById("branch");
   const targetDir = document.getElementById("targetDir");
   const commitPrefix = document.getElementById("commitPrefix");
-  const mode = document.getElementById("mode");
+  const pushToGithub = document.getElementById("pushToGithub");
+  const advancedToggle = document.getElementById("advancedToggle");
+  const advancedSection = document.getElementById("advancedSection");
   const saveBtn = document.getElementById("save");
   const savedHint = document.getElementById("savedHint");
   const pickFolderBtn = document.getElementById("pickFolder");
   const clearFolderBtn = document.getElementById("clearFolder");
   const folderNameEl = document.getElementById("folderName");
   const githubTokenInput = document.getElementById("githubToken");
+  const testConnectionBtn = document.getElementById("testConnection");
+  const testResultEl = document.getElementById("testResult");
 
-  if (!repoOwner || !repoName || !branch || !targetDir || !commitPrefix || !mode || !saveBtn) {
+  if (!repoUrl || !branch || !targetDir || !commitPrefix || !saveBtn) {
     console.error("缺少必要的DOM元素");
     return;
   }
 
   // 加载设置
   const s = await load();
-  repoOwner.value = s.repoOwner || "";
-  repoName.value = s.repoName || "";
+  repoUrl.value = s.repoUrl || "FXnadu/deepwhite-11ty";
   branch.value = s.branch || "main";
   targetDir.value = s.targetDir || "src/content/posts/dynamic/journals";
   commitPrefix.value = s.commitPrefix || "dynamic:";
-  mode.value = s.mode || 'simulate';
+  if (pushToGithub) pushToGithub.checked = !!s.push;
+  // advanced toggle handler
+  if (advancedToggle && advancedSection) {
+    advancedToggle.addEventListener('click', () => {
+      advancedSection.style.display = advancedSection.style.display === 'none' ? 'block' : 'none';
+    });
+  }
 
   // load token
   try {
@@ -134,12 +138,11 @@ function validateSettings(settings) {
   // 保存按钮事件
   saveBtn.addEventListener("click", async () => {
     const next = {
-      repoOwner: repoOwner.value.trim() || "FXnadu",
-      repoName: repoName.value.trim() || "deepwhite-11ty",
+      repoUrl: repoUrl.value.trim() || "FXnadu/deepwhite-11ty",
       branch: branch.value.trim() || "main",
       targetDir: targetDir.value.trim() || "src/content/posts/dynamic/journals",
       commitPrefix: commitPrefix.value.trim() || "dynamic:",
-      mode: mode.value || 'simulate'
+      push: !!(pushToGithub && pushToGithub.checked)
     };
 
     // 验证
@@ -184,7 +187,7 @@ function validateSettings(settings) {
   });
 
   // 输入框验证提示
-  const inputs = [repoOwner, repoName, branch, targetDir, commitPrefix];
+  const inputs = [repoUrl, branch, targetDir, commitPrefix];
   inputs.forEach(input => {
     input.addEventListener("blur", () => {
       if (!input.value.trim()) {
@@ -250,6 +253,40 @@ function validateSettings(settings) {
       } catch (e) {
         console.error("清除失败:", e);
         showToast("清除失败", "error");
+      }
+    });
+  }
+  
+  // Test connection button
+  if (testConnectionBtn) {
+    testConnectionBtn.addEventListener('click', async () => {
+      if (testResultEl) testResultEl.textContent = '';
+      try {
+        const tokenObj = await chrome.storage.local.get([TOKEN_KEY]);
+        const token = tokenObj[TOKEN_KEY] || '';
+        if (!token) {
+          if (testResultEl) testResultEl.textContent = '缺少 Token';
+          return;
+        }
+        const parsed = parseRepoUrl(repoUrl.value.trim());
+        if (!parsed) {
+          if (testResultEl) testResultEl.textContent = '仓库地址格式错误';
+          return;
+        }
+        const api = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`;
+        const res = await fetch(api, { headers: { Authorization: `token ${token}` } });
+        if (res.ok) {
+          if (testResultEl) testResultEl.textContent = '连接成功';
+        } else if (res.status === 404) {
+          if (testResultEl) testResultEl.textContent = '仓库未找到或无权限';
+        } else if (res.status === 401) {
+          if (testResultEl) testResultEl.textContent = 'Token 无效';
+        } else {
+          if (testResultEl) testResultEl.textContent = `错误: ${res.status}`;
+        }
+      } catch (e) {
+        console.error('测试连接失败', e);
+        if (testResultEl) testResultEl.textContent = '测试失败（查看控制台）';
       }
     });
   }

@@ -353,3 +353,26 @@ export async function githubPutFile({ owner, repo, path, branch = 'main', messag
   }
   return await res.json();
 }
+
+/**
+ * Parse repository identifier into owner and repo.
+ * Accepts formats:
+ * - owner/repo
+ * - https://github.com/owner/repo(.git)?
+ * - git@github.com:owner/repo.git
+ * Returns { owner, repo } or null if invalid.
+ */
+export function parseRepoUrl(input) {
+  if (!input || typeof input !== 'string') return null;
+  const s = input.trim();
+  // owner/repo
+  const m1 = s.match(/^([^\/\s]+)\/([^\/\s]+?)(?:\.git)?$/);
+  if (m1) return { owner: m1[1], repo: m1[2] };
+  // https://github.com/owner/repo or with .git
+  const m2 = s.match(/^https?:\/\/github\.com\/([^\/\s]+)\/([^\/\s]+?)(?:\.git)?(?:\/)?$/i);
+  if (m2) return { owner: m2[1], repo: m2[2] };
+  // git@github.com:owner/repo.git
+  const m3 = s.match(/^git@github\.com:([^\/\s]+)\/([^\/\s]+?)(?:\.git)?$/i);
+  if (m3) return { owner: m3[1], repo: m3[2] };
+  return null;
+}
