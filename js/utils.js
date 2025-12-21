@@ -258,6 +258,7 @@ export async function getSavedFileName() {
   return h ? (h.name || '') : '';
 }
 
+/**
  * Try to detect a reasonable targetDir inside the provided DirectoryHandle.
  * Returns the first matching candidate path (string) or empty string if none found.
  * This helps auto-fill `targetDir` in settings when the user points to a repo root.
@@ -352,4 +353,3 @@ export async function githubPutFile({ owner, repo, path, branch = 'main', messag
   }
   return await res.json();
 }
-
