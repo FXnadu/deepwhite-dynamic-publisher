@@ -13,7 +13,7 @@ async function load() {
       branch: "main",
       targetDir: "src/content/posts/dynamic/journals",
       commitPrefix: "dynamic:",
-      simulate: true
+      mode: "simulate"
     };
   } catch (error) {
     console.error("加载设置失败:", error);
@@ -24,7 +24,7 @@ async function load() {
       branch: "main",
       targetDir: "src/content/posts/dynamic/journals",
       commitPrefix: "dynamic:",
-      simulate: true
+      mode: "simulate"
     };
   }
 }

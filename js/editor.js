@@ -51,7 +51,7 @@ async function loadSettings() {
       branch: "main",
       targetDir: "src/content/posts/dynamic/journals",
       commitPrefix: "dynamic:",
-      simulate: true
+      mode: "simulate"
     };
   } catch (error) {
     console.error("加载设置失败:", error);
@@ -62,7 +62,7 @@ async function loadSettings() {
       branch: "main",
       targetDir: "src/content/posts/dynamic/journals",
       commitPrefix: "dynamic:",
-      simulate: true
+      mode: "simulate"
     };
   }
 }
@@ -166,18 +166,44 @@ function tick() {
   // "发表并推送" 按钮
   const publishAndPushBtn = document.getElementById("publishAndPush");
 
-  async function writeLocalFile(filename, content) {
+  async function ensureWritableDirectory(dirHandle) {
+    if (typeof dirHandle.requestPermission === 'function') {
+      const permission = await dirHandle.requestPermission({ mode: 'readwrite' });
+      if (permission !== 'granted') {
+        return { ok: false, reason: 'permission_denied' };
+      }
+    }
+    return { ok: true };
+  }
+
+  async function getTargetDirectory(dirHandle, targetDirPath) {
+    const segments = (targetDirPath || '').split('/').map(s => s.trim()).filter(Boolean);
+    let current = dirHandle;
+    for (const segment of segments) {
+      current = await current.getDirectoryHandle(segment, { create: true });
+    }
+    return { dir: current, subPath: segments.join('/') };
+  }
+
+  async function writeLocalFile(filename, content, targetDirPath) {
     const dirHandle = (typeof window.getSavedDirectoryHandle === 'function') ? await window.getSavedDirectoryHandle() : null;
     if (!dirHandle) return { ok: false, reason: 'no_folder' };
     try {
-      const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+      const writableCheck = await ensureWritableDirectory(dirHandle);
+      if (!writableCheck.ok) {
+        return writableCheck;
+      }
+
+      const { dir: targetDir, subPath } = await getTargetDirectory(dirHandle, targetDirPath);
+      const fileHandle = await targetDir.getFileHandle(filename, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(content);
       await writable.close();
-      return { ok: true };
+      const relativePath = subPath ? `${subPath}/${filename}` : filename;
+      return { ok: true, path: relativePath };
     } catch (e) {
       console.error("本地写入失败:", e);
-      return { ok: false, reason: e };
+      return { ok: false, reason: e?.message || e };
     }
   }
 
@@ -195,18 +221,30 @@ function tick() {
         return;
       }
 
+      let localSaveOk = false;
+      let pushOk = settings.mode !== 'local-and-push';
+
       setButtonLoading(publishAndPushBtn, true);
       setStatus("正在保存并推送…", "status-ok");
       try {
         // 1) 本地写入优先（若未选择则保存为草稿）
-        const res = await writeLocalFile(filename, body);
+        const res = await writeLocalFile(filename, body, settings.targetDir);
         if (res.ok) {
-          showToast(`本地已创建 ${filename}`, "success", 1800);
+          localSaveOk = true;
+          const localPath = res.path || filename;
+          showToast(`本地已创建 ${localPath}`, "success", 1800);
+          setStatus(`已保存到本地：${localPath}`, "status-ok");
         } else if (res.reason === 'no_folder') {
           await saveDraft(body);
           showToast("未选择本地文件夹，已保存到草稿", "warning");
+          setStatus("未选择本地文件夹，已保存草稿", "status-warn");
+        } else if (res.reason === 'permission_denied') {
+          await saveDraft(body);
+          showToast("未授予本地文件夹写入权限，已暂存草稿", "warning");
+          setStatus("缺少写入权限，已暂存草稿", "status-warn");
         } else {
           showToast("本地保存失败（已尝试继续推送）", "warning");
+          setStatus("本地保存失败，正在继续处理", "status-warn");
         }
 
         // 2) 依据 mode 决定是否推送
@@ -228,9 +266,12 @@ function tick() {
               token
             });
             showToast("已推送到 GitHub", "success", 2500);
+            pushOk = true;
           } catch (e) {
             console.error("推送失败:", e);
             showToast("推送到 GitHub 失败: " + (e.message || e), "error");
+            pushOk = false;
+            setStatus("远程推送失败，请检查 GitHub 配置或 token", "status-warn");
           }
         } else if (settings.mode === 'simulate') {
           const preview = `将创建：${path}\n提交信息：${settings.commitPrefix} ${filename}\n\n---\n${body.substring(0, 280)}${body.length > 280 ? "…" : ""}`;
@@ -245,7 +286,17 @@ function tick() {
         editor.value = "";
         updateWordCount("");
         setDraftState("草稿：已发表并清空");
-        setStatus("已发表（本地+远程）", "status-success");
+
+        const finalStatus = (() => {
+          if (!localSaveOk) return "本地保存未完成，请检查设置";
+          if (settings.mode === 'local-and-push') {
+            return pushOk ? "已发表（本地+远程）" : "本地保存完成，远程推送失败";
+          }
+          if (settings.mode === 'local-only') return "已保存到本地";
+          return "已模拟发表";
+        })();
+        const finalClass = (!localSaveOk || (settings.mode === 'local-and-push' && !pushOk)) ? "status-warn" : "status-success";
+        setStatus(finalStatus, finalClass);
       } catch (error) {
         console.error("发表失败:", error);
         setStatus("发表失败", "status-err");
