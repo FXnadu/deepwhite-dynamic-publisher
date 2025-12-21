@@ -26,14 +26,15 @@
         <button class="btn btn-primary" id="save">保存</button>
       </div>
     </div>
-    <div style="padding:10px 16px; display:flex; align-items:center; gap:12px;">
-      <div>
+    <div class="row" style="align-items:center;">
+      <div class="field">
         <div class="label">本地保存文件夹</div>
-        <div id="folderName" class="hint">未选择</div>
-      </div>
-      <div style="margin-left:auto; display:flex; gap:8px;">
-        <button class="btn" id="pickFolder">选择文件夹</button>
-        <button class="btn" id="clearFolder">清除</button>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button class="btn" id="pickFolder">选择文件夹</button>
+          <button class="btn" id="clearFolder">清除</button>
+          <div id="folderName" class="hint" style="margin-left:8px;">未选择</div>
+        </div>
+        <div class="hint">选择本地目标文件夹（浏览器文件系统访问 API）。用于本地创建 md 文件。</div>
       </div>
     </div>
 
@@ -116,29 +117,6 @@
           <button class="btn" id="testConnection">测试连接</button>
           <span id="testResult" class="hint" style="margin-left:10px;"></span>
         </div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="field">
-        <div class="label">Local Folder</div>
-        <div style="display:flex; gap:8px; align-items:center;">
-          <button class="btn" id="pickFolder">选择文件夹</button>
-          <button class="btn" id="clearFolder">清除</button>
-          <div id="folderName" class="hint" style="margin-left:8px;"></div>
-        </div>
-        <div class="hint">选择本地目标文件夹（浏览器文件系统访问 API）。用于本地创建 md 文件。</div>
-      </div>
-      <div class="field">
-        <div class="label">GitHub Token</div>
-        <input 
-          class="input" 
-          id="githubToken" 
-          placeholder="个人访问令牌（PAT）" 
-          autocomplete="off"
-          type="password"
-        />
-        <div class="hint">用于推送到 GitHub（建议只在本地保管）。仅当 Mode 选择“真实推送”时使用。</div>
       </div>
     </div>
 
