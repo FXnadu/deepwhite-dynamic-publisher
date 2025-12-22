@@ -73,6 +73,8 @@
   position: relative;
   background: transparent;
   color: transparent; /* hide plain text so highlight layer shows through */
+  /* Render the text immediately via shadow to avoid perceived typing delay before highlight updates */
+  text-shadow: 0 0 0 var(--color-fg, #111);
   caret-color: var(--color-fg, #111); /* caret remains visible */
   z-index: 2;
   resize: none;

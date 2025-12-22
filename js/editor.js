@@ -896,6 +896,7 @@ function tick() {
         setStatus("内容为空", "status-warn");
         showToast("请先输入内容", "warning");
         editor.focus();
+        __publishLock = false;
         return;
       }
 
