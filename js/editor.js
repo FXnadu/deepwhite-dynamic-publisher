@@ -1,4 +1,4 @@
-import { showToast, showConfirm, showChoice, showPrompt, formatDate, formatTime, debounce, countChars, countWords, setButtonLoading, getSavedDirectoryHandle, clearSavedDirectoryHandle, githubPutFile, parseRepoUrl, getCachedSettings } from './utils.js';
+import { showToast, showConfirm, showChoice, showPrompt, formatDate, formatTime, debounce, countChars, countWords, setButtonLoading, getSavedDirectoryHandle, clearSavedDirectoryHandle, githubPutFile, parseRepoUrl, getCachedSettings, uploadToPicGo, encodeBase64Utf8 } from './utils.js';
 
 const DRAFT_KEY = "dw_draft_v1";
 const DRAFT_META_KEY = "dw_draft_meta_v1"; // stores lastSavedAt timestamp (ms since epoch)
@@ -61,7 +61,12 @@ async function updateFileHint() {
       <span class="hint-file-name">${filename}</span>
       <span style="margin:0 8px;">→</span>
       <span class="hint-file-dir" title="${fullPath}">${displayDir}</span>
-      <button id="copyPathBtn" class="copy-path-btn" title="复制完整路径" aria-label="复制完整路径">📋</button>
+      <button id="copyPathBtn" class="copy-path-btn" title="复制完整路径" aria-label="复制完整路径">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      </button>
     `;
     // Attach copy handler
     const copyBtn = document.getElementById('copyPathBtn');
@@ -105,7 +110,11 @@ async function loadSettings() {
       branch: "main",
       targetDir: "src/content/posts/dynamic/journals",
       commitPrefix: "dynamic:",
-      push: false
+      push: false,
+      picgoEndpoint: "http://localhost:36677/upload",
+      picgoToken: "",
+      picgoAutoUpload: false,
+      picgoUploadFormat: "auto"
     };
   }
 }
@@ -308,6 +317,38 @@ function tick() {
       highlightEl.textContent = "";
     }
   }
+  /**
+   * Immediately render highlight for the current visible lines.
+   * This is a lightweight, synchronous update used to reduce perceived
+   * typing "ghosting" by keeping the overlay roughly in-sync with input.
+   * It renders only the visible chunk (with small buffer) and is safe
+   * to call frequently (we wrap calls in requestAnimationFrame from input).
+   */
+  function updateVisibleHighlightNow(value) {
+    if (!highlightEl) return;
+    try {
+      const text = (typeof value === 'string') ? value : (editor && editor.value) || "";
+      // If document is small, reuse full-render path for simplicity.
+      if (text.length <= HIGHLIGHT_MAX_CHARS) {
+        highlightEl.innerHTML = renderHighlight(text);
+        return;
+      }
+      const lineHeight = getLineHeight();
+      const totalLines = text.split('\n').length;
+      const startLine = Math.max(0, Math.floor(editor.scrollTop / lineHeight));
+      const visibleLines = Math.max(1, Math.ceil(editor.clientHeight / lineHeight) + 2);
+      const endLine = Math.min(totalLines, startLine + visibleLines);
+      const lines = text.split('\n');
+      const chunk = lines.slice(startLine, endLine).join('\n');
+      const topPad = startLine * lineHeight;
+      const bottomPad = Math.max(0, (totalLines - endLine) * lineHeight);
+      const rendered = renderHighlight(chunk || "");
+      // Update only visible chunk to keep DOM writes small and fast.
+      highlightEl.innerHTML = `<div style="height:${topPad}px"></div>${rendered}<div style="height:${bottomPad}px"></div>`;
+    } catch (e) {
+      // swallow errors to avoid disrupting input
+    }
+  }
   // sync scroll
   if (highlightEl) {
     // throttle scroll synchronization to animation frames; avoid redundant DOM writes
@@ -360,6 +401,8 @@ function tick() {
   // initialize highlight layer with draft
   updateHighlight(draft);
   updateWordCount(draft);
+  // ensure image gallery reflects current editor content on init
+  try { renderImageGalleryFromText(draft); } catch (e) { /* ignore */ }
   // load draft metadata (last saved timestamp) and update draftState UI
   const draftMeta = await loadDraftMeta();
   if (draft && draftMeta) {
@@ -389,6 +432,13 @@ function tick() {
     const value = editor.value;
     // Schedule expensive updates (wordcount + highlight) to a debounced rAF batch.
     scheduleInputUpdate(value);
+    // Immediately update the visible lines' highlight to reduce perceived "ghosting".
+    // Use rAF to avoid forcing synchronous layout during the input event.
+    try {
+      requestAnimationFrame(() => {
+        updateVisibleHighlightNow(value);
+      });
+    } catch (e) { /* ignore */ }
 
     if (!isSaving) {
       setDraftState("草稿：已修改（自动保存中…）");
@@ -406,7 +456,146 @@ function tick() {
     }, 600);
   });
 
-  // Paste image handling (PicGo)
+  /**
+   * Shared handler for image File/Blob that should behave like paste:
+   * - If PicGo auto-upload enabled and endpoint configured => upload and insert URL
+   * - Otherwise prompt user for upload/local/cancel and handle fallbacks
+   */
+  async function handleImageFile(file, opts = {}) {
+    if (!file) return;
+    try {
+      console.log('handleImageFile start', { name: file.name, type: file.type, size: file.size });
+    } catch (e) { /* ignore inspect error */ }
+    try {
+      const settings = await loadSettings();
+      try {
+        console.log('handleImageFile settings', {
+          picgoEndpoint: settings && settings.picgoEndpoint,
+          picgoAutoUpload: !!(settings && settings.picgoAutoUpload)
+        });
+      } catch (e) {}
+      const endpoint = settings.picgoEndpoint;
+      const token = settings.picgoToken;
+      const auto = !!settings.picgoAutoUpload || !!(opts && opts.forceAuto);
+      showToast("检测到图片，开始处理…", "success", 1000);
+
+      if (auto && endpoint) {
+        setStatus("图片上传中…", "status-ok");
+        try {
+          const url = await uploadToPicGo(endpoint, file, token, { forceJson: (settings && settings.picgoUploadFormat === 'json') });
+          const ta = document.getElementById('editor');
+          insertTextAtCursor(ta, `![](${url})\n`);
+          renderImageGalleryFromText(ta.value);
+          showToast("图片上传成功", "success", 1600);
+        } catch (err) {
+          console.error("PicGo 上传失败:", err);
+          showToast("图片上传失败，尝试保存到本地", "warning", 1800);
+          try {
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2,'0');
+            const mm = String(now.getMinutes()).padStart(2,'0');
+            const ss = String(now.getSeconds()).padStart(2,'0');
+            const imgName = `${formatDate(now)}-${hh}${mm}${ss}.png`;
+            const pickSave = await showConfirm('上传失败 - 请选择保存位置', '图片上传失败，必须手动选择保存路径才能保存在本地。现在选择文件夹保存？', '选择并保存', '取消');
+            if (pickSave) {
+              const saveRes = await writeBlobToUserPickedDirectory(imgName, file, (settings.targetDir || 'src/content/posts/dynamic/journals') + '/images');
+              if (saveRes && saveRes.ok) {
+                const ta = document.getElementById('editor');
+                insertTextAtCursor(ta, `![](${saveRes.path || imgName})\n`);
+                renderImageGalleryFromText(ta.value);
+                showToast("图片已保存到你选择的本地文件夹", "success", 1600);
+              } else {
+                showToast("未保存图片（用户取消或保存失败）", "warning", 1800);
+              }
+            } else {
+              showToast("未保存图片（用户取消）", "warning", 1400);
+            }
+          } catch (e) {
+            console.error("本地保存图片失败:", e);
+            exportBlobAsFile(`${formatDate()}-pasted.png`, file);
+          } finally {
+            setStatus("就绪", "status-ok");
+          }
+        }
+      } else {
+        // Ask user for action (upload/local/cancel)
+        const choice = await showChoice('检测到图片', '检测到图片，选择操作：', [
+          { id: 'upload', label: '上传到 PicGo', btnClass: 'btn-primary' },
+          { id: 'local', label: '保存到本地', btnClass: '' },
+          { id: 'cancel', label: '取消', btnClass: '' }
+        ]);
+        if (choice === 'upload' && endpoint) {
+          try {
+            const url = await uploadToPicGo(endpoint, file, token, { forceJson: (settings && settings.picgoUploadFormat === 'json') });
+            const ta = document.getElementById('editor');
+            insertTextAtCursor(ta, `![](${url})\n`);
+            renderImageGalleryFromText(ta.value);
+            showToast("图片上传成功", "success", 1600);
+          } catch (err) {
+            console.error("PicGo 上传失败:", err);
+            showToast("上传失败，尝试保存到本地", "warning", 1800);
+            try {
+              const now = new Date();
+              const hh = String(now.getHours()).padStart(2,'0');
+              const mm = String(now.getMinutes()).padStart(2,'0');
+              const ss = String(now.getSeconds()).padStart(2,'0');
+              const imgName = `${formatDate(now)}-${hh}${mm}${ss}.png`;
+              const pickSave = await showConfirm('上传失败 - 请选择保存位置', '图片上传失败，必须手动选择保存路径才能保存在本地。现在选择文件夹保存？', '选择并保存', '取消');
+              if (pickSave) {
+                const saveRes = await writeBlobToUserPickedDirectory(imgName, file, (settings.targetDir || 'src/content/posts/dynamic/journals') + '/images');
+                if (saveRes && saveRes.ok) {
+                  const ta = document.getElementById('editor');
+                  insertTextAtCursor(ta, `![](${saveRes.path || imgName})\n`);
+                  renderImageGalleryFromText(ta.value);
+                  showToast("图片已保存到你选择的本地文件夹", "success", 1600);
+                } else {
+                  showToast("未保存图片（用户取消或保存失败）", "warning", 1800);
+                }
+              } else {
+                showToast("未保存图片（用户取消）", "warning", 1400);
+              }
+            } catch (e) {
+              console.error('处理上传失败回退时出错', e);
+              showToast("未保存图片（出错）", "error", 1600);
+            }
+          }
+        } else if (choice === 'local') {
+          try {
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2,'0');
+            const mm = String(now.getMinutes()).padStart(2,'0');
+            const ss = String(now.getSeconds()).padStart(2,'0');
+            const imgName = `${formatDate(now)}-${hh}${mm}${ss}.png`;
+            const pickSave = await showConfirm('请选择保存位置', '请选择一个本地文件夹以保存图片：', '选择并保存', '取消');
+            if (pickSave) {
+              const saveRes = await writeBlobToUserPickedDirectory(imgName, file, (settings.targetDir || 'src/content/posts/dynamic/journals') + '/images');
+              if (saveRes && saveRes.ok) {
+                const ta = document.getElementById('editor');
+                insertTextAtCursor(ta, `![](${saveRes.path || imgName})\n`);
+                renderImageGalleryFromText(ta.value);
+                showToast("图片已保存到你选择的本地文件夹", "success", 1600);
+              } else {
+                showToast("未保存图片（用户取消或保存失败）", "warning", 1800);
+              }
+            } else {
+              showToast("未保存图片（用户取消）", "warning", 1400);
+            }
+          } catch (e) {
+            console.error("保存本地图片失败:", e);
+            exportBlobAsFile(`${formatDate()}-pasted.png`, file);
+          }
+        } else {
+          // cancelled
+        }
+      }
+    } catch (e) {
+      console.error("处理图片时出错:", e);
+    } finally {
+      setStatus("就绪", "status-ok");
+    }
+  }
+
+  // Paste image handling (PicGo) — delegate to shared handler
   editor.addEventListener('paste', async (e) => {
     try {
       const items = (e.clipboardData && e.clipboardData.items) ? Array.from(e.clipboardData.items) : [];
@@ -416,90 +605,7 @@ function tick() {
           const file = item.getAsFile();
           if (!file) continue;
           e.preventDefault();
-          const settings = await loadSettings();
-          const endpoint = settings.picgoEndpoint;
-          const token = settings.picgoToken;
-          const auto = !!settings.picgoAutoUpload;
-          showToast("检测到图片，开始处理…", "success", 1000);
-
-          if (auto && endpoint) {
-            setStatus("图片上传中…", "status-ok");
-            try {
-              const url = await uploadToPicGo(endpoint, file, token);
-              const ta = document.getElementById('editor');
-              insertTextAtCursor(ta, `![](${url})\n`);
-              renderImageGalleryFromText(ta.value);
-              showToast("图片上传成功", "success", 1600);
-            } catch (err) {
-              console.error("PicGo 上传失败:", err);
-              showToast("图片上传失败，尝试保存到本地", "warning", 1800);
-              // fallback: try saving to local images folder inside targetDir
-              try {
-                const now = new Date();
-                const hh = String(now.getHours()).padStart(2,'0');
-                const mm = String(now.getMinutes()).padStart(2,'0');
-                const ss = String(now.getSeconds()).padStart(2,'0');
-                const imgName = `${formatDate(now)}-${hh}${mm}${ss}.png`;
-                const saveRes = await writeLocalFile(imgName, file, (settings.targetDir || 'src/content/posts/dynamic/journals') + '/images');
-                if (saveRes && saveRes.ok) {
-                  const ta = document.getElementById('editor');
-                  insertTextAtCursor(ta, `![](${saveRes.path || imgName})\n`);
-                  renderImageGalleryFromText(ta.value);
-                  showToast("图片已保存到本地", "success", 1600);
-                } else {
-                  // as last resort, prompt download
-                  exportBlobAsFile(imgName, file);
-                }
-              } catch (e) {
-                console.error("本地保存图片失败:", e);
-                exportBlobAsFile(`${formatDate()}-pasted.png`, file);
-              }
-            } finally {
-              setStatus("就绪", "status-ok");
-            }
-          } else {
-            // not auto-upload: ask user
-            const choice = await showChoice('检测到图片', '检测到剪贴板图片，选择操作：', [
-              { id: 'upload', label: '上传到 PicGo', btnClass: 'btn-primary' },
-              { id: 'local', label: '保存到本地', btnClass: '' },
-              { id: 'cancel', label: '取消', btnClass: '' }
-            ]);
-            if (choice === 'upload' && endpoint) {
-              try {
-                const url = await uploadToPicGo(endpoint, file, token);
-                const ta = document.getElementById('editor');
-                insertTextAtCursor(ta, `![](${url})\n`);
-                renderImageGalleryFromText(ta.value);
-                showToast("图片上传成功", "success", 1600);
-              } catch (err) {
-                console.error("PicGo 上传失败:", err);
-                showToast("上传失败，已导出图片", "warning", 1800);
-                exportBlobAsFile(`${formatDate()}-pasted.png`, file);
-              }
-            } else if (choice === 'local') {
-              try {
-                const now = new Date();
-                const hh = String(now.getHours()).padStart(2,'0');
-                const mm = String(now.getMinutes()).padStart(2,'0');
-                const ss = String(now.getSeconds()).padStart(2,'0');
-                const imgName = `${formatDate(now)}-${hh}${mm}${ss}.png`;
-                const saveRes = await writeLocalFile(imgName, file, (settings.targetDir || 'src/content/posts/dynamic/journals') + '/images');
-                if (saveRes && saveRes.ok) {
-                  const ta = document.getElementById('editor');
-                  insertTextAtCursor(ta, `![](${saveRes.path || imgName})\n`);
-                  renderImageGalleryFromText(ta.value);
-                  showToast("图片已保存到本地", "success", 1600);
-                } else {
-                  exportBlobAsFile(imgName, file);
-                }
-              } catch (e) {
-                console.error("保存本地图片失败:", e);
-                exportBlobAsFile(`${formatDate()}-pasted.png`, file);
-              }
-            } else {
-              // cancelled
-            }
-          }
+          await handleImageFile(file);
           break;
         }
       }
@@ -640,6 +746,46 @@ function tick() {
     }
   }
 
+  /**
+   * Prompt the user to pick a directory (one-off) and write a Blob/File into it.
+   * This does NOT persist the chosen handle to the app storage — it's an explicit
+   * user-chosen location for this operation. Returns { ok, path?, reason? }.
+   */
+  async function writeBlobToUserPickedDirectory(filename, blob, suggestedSubPath = '') {
+    try {
+      // showDirectoryPicker will throw if the user cancels (or NotAllowedError)
+      const dirHandle = await window.showDirectoryPicker();
+      if (!dirHandle) return { ok: false, reason: 'cancelled' };
+      // navigate into suggested subpath (like 'images') if provided
+      let target = dirHandle;
+      if (suggestedSubPath) {
+        const parts = String(suggestedSubPath).split('/').map(p => p.trim()).filter(Boolean);
+        for (const p of parts) {
+          try {
+            target = await target.getDirectoryHandle(p, { create: true });
+          } catch (e) {
+            // if cannot create/traverse, stop and use the picked root
+            break;
+          }
+        }
+      }
+      const fileHandle = await target.getFileHandle(filename, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      const relPath = suggestedSubPath ? `${suggestedSubPath.replace(/\/+$/,'')}/${filename}` : filename;
+      return { ok: true, path: relPath };
+    } catch (e) {
+      // distinguish cancel vs permission errors
+      const name = e && e.name ? e.name : null;
+      if (name === 'AbortError' || name === 'NotAllowedError') {
+        return { ok: false, reason: 'cancelled', error: e && e.message ? e.message : String(e) };
+      }
+      console.error('写入用户选定目录失败:', e);
+      return { ok: false, reason: e && e.message ? e.message : String(e), error: e };
+    }
+  }
+
   // prevent concurrent publish operations
   let __publishLock = false;
 
@@ -693,22 +839,55 @@ function tick() {
     updateHighlight(textarea.value);
   }
 
+  // Outside-click handler for gallery drawer: attach/detach to close drawer when clicking outside.
+  let __galleryOutsideHandler = null;
+  function enableGalleryOutsideClose(gallery) {
+    if (__galleryOutsideHandler) return;
+    __galleryOutsideHandler = (e) => {
+      try {
+        if (!gallery.contains(e.target)) {
+          gallery.classList.remove('open');
+          // re-render to show closed state (minimal trigger)
+          try { renderImageGalleryFromText((document.getElementById('editor') || {}).value || ""); } catch (_) {}
+          document.removeEventListener('click', __galleryOutsideHandler);
+          __galleryOutsideHandler = null;
+        }
+      } catch (err) { /* ignore */ }
+    };
+    // add listener asynchronously to avoid catching the same click that opened the drawer
+    setTimeout(() => { document.addEventListener('click', __galleryOutsideHandler); }, 0);
+  }
+  function disableGalleryOutsideClose() {
+    if (!__galleryOutsideHandler) return;
+    try { document.removeEventListener('click', __galleryOutsideHandler); } catch (e) {}
+    __galleryOutsideHandler = null;
+  }
+
   // Parse markdown image URLs from text: ![alt](url)
   function parseImageUrlsFromText(text) {
     if (!text) return [];
     const urls = [];
-    const re = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g;
+    // Support image URLs wrapped in <> (to allow spaces/parentheses) or plain URLs.
+    // Matches:
+    //   ![alt](url)
+    //   ![alt](<url with spaces>)
+    // Also tolerates an optional "title" after URL: ![alt](url "title")
+    const re = /!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^)\n]+?))(?:\s+"[^"]*")?\s*\)/g;
     let m;
     while ((m = re.exec(text)) !== null) {
       try {
-        const u = m[1].trim();
-        if (u) urls.push(u);
+        const raw = (m[1] || m[2] || '').trim();
+        if (raw) {
+          // strip surrounding <> if present (group 1 already excludes <>)
+          urls.push(raw);
+        }
       } catch (e) { /* ignore */ }
     }
     return urls;
   }
 
-  // Render the image gallery from an array of URLs
+  // Render the image gallery from an array of URLs. When there are no images,
+  // show a clickable placeholder that lets the user pick a local image to upload.
   function renderImageGalleryFromText(text) {
     try {
       const gallery = document.getElementById('imageGallery');
@@ -726,6 +905,121 @@ function tick() {
       // limit to last 40 images
       const list = unique.slice(-40);
       gallery.innerHTML = '';
+
+      // ensure a hidden file input exists (created once) — reuse across empty or non-empty gallery
+      let fileInput = document.getElementById('dw-image-file-input');
+      if (!fileInput) {
+        fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*';
+        fileInput.id = 'dw-image-file-input';
+        fileInput.style.display = 'none';
+        document.body.appendChild(fileInput);
+
+        fileInput.addEventListener('change', async (ev) => {
+          const files = fileInput.files;
+          if (!files || files.length === 0) return;
+          const file = files[0];
+          try {
+            console.log('fileInput.change', { name: file.name, type: file.type, size: file.size });
+              // Delegate to shared handler so clicking/selecting image behaves like paste.
+              // Force auto-upload for file-selection to mirror paste behavior.
+              await handleImageFile(file, { forceAuto: true });
+          } finally {
+            // reset input so same file can be selected again
+            try { fileInput.value = ''; } catch (e) {}
+          }
+        });
+      }
+
+      if (list.length === 0) {
+        gallery.classList.add('empty');
+        // If gallery is not open, render a small trigger strip only.
+        if (!gallery.classList.contains('open')) {
+          gallery.classList.remove('open');
+          gallery.innerHTML = '';
+          const trigger = document.createElement('div');
+          trigger.className = 'empty-trigger';
+          trigger.style.height = '18px';
+          trigger.style.width = '100%';
+          trigger.style.cursor = 'pointer';
+          trigger.title = '添加图片';
+        trigger.addEventListener('click', (e) => {
+          e.preventDefault();
+          // open drawer and re-render expanded content
+          gallery.classList.add('open');
+          renderImageGalleryFromText(text);
+        });
+          gallery.appendChild(trigger);
+          return;
+        }
+
+        // gallery is open -> render expanded placeholder UI (large dashed box + description + upload panel)
+        gallery.innerHTML = '';
+        const placeholderWrap = document.createElement('div');
+        placeholderWrap.className = 'image-item';
+        placeholderWrap.style.flex = '1 1 auto';
+        placeholderWrap.style.minWidth = '160px';
+
+        const placeholder = document.createElement('div');
+        placeholder.className = 'empty-placeholder';
+
+        const dropBox = document.createElement('div');
+        dropBox.id = 'galleryDropBox';
+        dropBox.className = 'empty-box';
+        dropBox.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;"><span class="add-symbol">＋</span><div style="font-size:12px;color:var(--color-text-subtle);">点击选择图片</div></div>`;
+
+        placeholder.appendChild(dropBox);
+        placeholderWrap.appendChild(placeholder);
+
+        // descriptive text shown by default under the dashed box
+        const description = document.createElement('div');
+        description.className = 'description';
+        description.textContent = '点击方框选择图片，图片将上传到 PicGo（仅 PicGo）';
+        placeholder.appendChild(description);
+
+        // upload panel (hidden until expanded) — used for status/progress only
+        const uploadPanel = document.createElement('div');
+        uploadPanel.className = 'upload-panel';
+        uploadPanel.innerHTML = `<div id="uploadStatus" style="color:var(--color-text-subtle);font-size:13px;"></div>`;
+        placeholderWrap.appendChild(uploadPanel);
+
+        gallery.appendChild(placeholderWrap);
+
+        // click handler: when open, clicking inner box opens the file picker.
+        dropBox.addEventListener('click', (e) => {
+          e.preventDefault();
+          const inp = document.getElementById('dw-image-file-input');
+          if (inp) inp.click();
+        });
+
+        // clicking on the uploadPanel background (inside drawer) should close the drawer
+        uploadPanel.addEventListener('click', (ev) => {
+          try {
+            if (ev.target === uploadPanel) {
+              gallery.classList.remove('open');
+              disableGalleryOutsideClose();
+              // re-render to closed minimal state
+              try { renderImageGalleryFromText((document.getElementById('editor') || {}).value || ""); } catch (_) {}
+            }
+          } catch (err) { /* ignore */ }
+        });
+
+        // clicking the gallery background should toggle the drawer
+        gallery.addEventListener('click', (e) => {
+          if (e.target === gallery) {
+            gallery.classList.toggle('open');
+            renderImageGalleryFromText(text);
+          }
+        });
+
+        return;
+      } else {
+        // not empty: remove empty/open classes
+        gallery.classList.remove('empty');
+        gallery.classList.remove('open');
+      }
+
       for (const u of list) {
         const item = document.createElement('div');
         item.className = 'image-item';
@@ -747,7 +1041,8 @@ function tick() {
         const copyBtn = document.createElement('button');
         copyBtn.className = 'btn btn-icon';
         copyBtn.title = '复制图片链接';
-        copyBtn.textContent = '📋';
+        copyBtn.setAttribute('aria-label', '复制图片链接');
+        copyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
         copyBtn.addEventListener('click', async (ev) => {
           ev.preventDefault();
           try {
@@ -771,7 +1066,38 @@ function tick() {
         const delBtn = document.createElement('button');
         delBtn.className = 'btn btn-icon btn-text-danger';
         delBtn.title = '从文档中删除该图片';
-        delBtn.textContent = '✖';
+        delBtn.setAttribute('aria-label', '删除图片链接');
+        delBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg"
+
+     width="16" height="16"
+
+     viewBox="0 0 24 24"
+
+     aria-label="delete">
+
+  <!-- lid -->
+
+  <path fill="#E53935"
+
+        d="M9 4.5c0-.55.45-1 1-1h4c.55 0 1 .45 1 1V5h2.2c.66 0 1.1.44 1.1 1.1
+
+           0 .39-.31.7-.7.7H6.4a.7.7 0 0 1-.7-.7c0-.66.44-1.1 1.1-1.1H9v-.5z"/>
+
+  <!-- body -->
+
+  <path fill="#E53935"
+
+        d="M7.4 8.2h9.2l-.6 10.6c-.05.9-.8 1.6-1.7 1.6H9.7
+
+           c-.9 0-1.65-.7-1.7-1.6l-.6-10.6z"/>
+
+  <!-- inner slats -->
+
+  <rect x="10.2" y="10" width="1.2" height="7.6" rx=".6" fill="#fff"/>
+
+  <rect x="12.4" y="10" width="1.2" height="7.6" rx=".6" fill="#fff"/>
+
+</svg>`;
         delBtn.addEventListener('click', async (ev) => {
           ev.preventDefault();
           const ok = await showConfirm('删除图片', '确定要从文档中删除该图片链接吗？此操作可恢复（撤销）', '删除', '取消');
@@ -805,8 +1131,46 @@ function tick() {
         item.appendChild(meta);
         gallery.appendChild(item);
       }
-      if (list.length === 0) {
-        gallery.innerHTML = '';
+
+      // Append persistent "添加图片" control after existing images so it appears at the end.
+      try {
+        const addItem = document.createElement('div');
+        addItem.className = 'image-item';
+        addItem.style.flex = '0 0 auto';
+        addItem.style.minWidth = '120px';
+
+        const addBox = document.createElement('div');
+        // make the control visually match thumbnails and keep spacing
+        addBox.className = 'add-thumb';
+        addBox.style.width = '100%';
+        addBox.style.height = '80px';
+        addBox.style.display = 'flex';
+        addBox.style.alignItems = 'center';
+        addBox.style.justifyContent = 'center';
+        addBox.style.borderRadius = '6px';
+        addBox.style.border = '1px solid var(--color-border)';
+        addBox.style.background = 'var(--color-code-bg)';
+        addBox.style.cursor = 'pointer';
+        addBox.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;"><span style="font-size:28px;line-height:1;color:var(--color-text-subtle)">＋</span></div>`;
+        addBox.addEventListener('click', (e) => {
+          e.preventDefault();
+          const inp = document.getElementById('dw-image-file-input');
+          if (inp) inp.click();
+        });
+
+        // caption below thumbnail for clarity
+        const caption = document.createElement('div');
+        caption.style.fontSize = '12px';
+        caption.style.color = 'var(--color-text-subtle)';
+        caption.style.textAlign = 'center';
+        caption.style.marginTop = '8px';
+        caption.textContent = '添加图片';
+
+        addItem.appendChild(addBox);
+        addItem.appendChild(caption);
+        gallery.appendChild(addItem);
+      } catch (e) {
+        // ignore any errors constructing the persistent add control
       }
     } catch (e) {
       console.error('渲染图片画廊失败', e);
@@ -1089,7 +1453,7 @@ function tick() {
               throw new Error('缺少 GitHub Token，请在设置中填写并保存');
             }
 
-            const contentBase64 = btoa(unescape(encodeURIComponent(body)));
+            const contentBase64 = encodeBase64Utf8(body);
             const commitMessage = `${settings.commitPrefix || 'dynamic:'} ${filename}`;
             const parsed = parseRepoUrl(settings.repoUrl || '');
             if (!parsed) throw new Error('无效的仓库地址，请在设置中使用 owner/repo 或完整 URL');
@@ -1123,7 +1487,7 @@ function tick() {
                   const tokenObj2 = await chrome.storage.local.get(['dw_github_token_v1']);
                   const token2 = tokenObj2['dw_github_token_v1'];
                   if (!token2) throw new Error('缺少 GitHub Token，请在设置中填写并保存');
-                  const contentBase642 = btoa(unescape(encodeURIComponent(body)));
+                  const contentBase642 = encodeBase64Utf8(body);
                   const commitMessage2 = `${settings.commitPrefix || 'dynamic:'} ${filename}`;
                   const parsed2 = parseRepoUrl(settings.repoUrl || '');
                   if (!parsed2) throw new Error('无效的仓库地址，请在设置中使用 owner/repo 或完整 URL');
@@ -1236,4 +1600,34 @@ function tick() {
 
   // 聚焦编辑器
   editor.focus();
+
+  // Editor PicGo test removed — use the Options page test button instead.
+
+  // Listen for cleared handle events so UI can update immediately when user
+  // removes local authorization from the Options page.
+  try {
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('dw:handleCleared', () => {
+        try {
+          showToast('本地授权已解除', 'success', 1600);
+          updateFileHint().catch(() => {});
+        } catch (e) { /* ignore */ }
+      });
+    }
+  } catch (e) { /* ignore */ }
+
+  // Also listen for a runtime message from other extension contexts (options -> background -> this page)
+  try {
+    if (typeof chrome !== 'undefined' && chrome && chrome.runtime && typeof chrome.runtime.onMessage === 'object') {
+      chrome.runtime.onMessage.addListener((msg) => {
+        try {
+          if (msg && msg.type === 'dw:handleCleared') {
+            showToast('本地授权已解除', 'success', 1600);
+            updateFileHint().catch(() => {});
+          }
+        } catch (e) { /* ignore */ }
+      });
+    }
+  } catch (e) { /* ignore */ }
+
 })();

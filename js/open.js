@@ -1,29 +1,6 @@
-function ensureActionHasNoPopup() {
-  try {
-    chrome.action.setPopup({ popup: "" });
-  } catch (e) {
-    // noop - some hosts may not support setting popup at SW startup
-  }
-}
-
-ensureActionHasNoPopup();
-
-chrome.runtime.onInstalled.addListener((details) => {
-  // Log install/update details to help debug unexpected behavior after reloads/updates
-  try {
-    console.info("dw-sw: onInstalled", details);
-  } catch (e) { /* noop */ }
-  ensureActionHasNoPopup();
-});
-
-// Helpful debug log when the service worker starts up. Keep lightweight.
-try {
-  console.debug("dw-sw: service worker initialized");
-} catch (e) { /* noop */ }
-
+// Centralized safe open logic for the editor. Exported so popup/options can call directly.
 const WIN_KEY = "dw_float_bounds_v1";
 const WIN_ID_KEY = "dw_float_id_v1";
-
 const DEFAULT_WIDTH = 520;
 const DEFAULT_HEIGHT = 680;
 const PAD = 24;
@@ -32,16 +9,13 @@ async function getStoredWinId(){
   const obj = await chrome.storage.local.get([WIN_ID_KEY]);
   return obj[WIN_ID_KEY] ?? null;
 }
-
 async function setStoredWinId(id){
   await chrome.storage.local.set({ [WIN_ID_KEY]: id });
 }
-
 async function getStoredBounds(){
   const obj = await chrome.storage.local.get([WIN_KEY]);
   return obj[WIN_KEY] ?? null;
 }
-
 async function saveBounds(bounds){
   await chrome.storage.local.set({ [WIN_KEY]: bounds });
 }
@@ -88,7 +62,7 @@ async function computeCreateData(){
 }
 
 let opening = false;
-async function openFloatingWindow(){
+export async function safeOpenEditor(){
   if(opening) return;
   opening = true;
   try{
@@ -103,68 +77,25 @@ async function openFloatingWindow(){
         await saveBounds({ left: info.left, top: info.top, width: info.width, height: info.height });
       } catch (e) { /* ignore */ }
     } catch (err) {
-      // Some platforms or environments may reject creating popup windows.
-      // Fallback: open the editor in a normal tab so user still gets the editor page.
+      // Fallback to tab, but defensively validate URL first.
       try {
         const url = chrome.runtime.getURL("editor.html");
-        // Defensive check: ensure URL is a non-empty string and looks like an extension URL.
         if (typeof url === "string" && url.length > 0 && url.includes("editor.html")) {
           try {
             await chrome.tabs.create({ url });
           } catch (tabErr) {
-            // Log and swallow tab creation errors to avoid unexpected browser behavior.
-            try { console.error("dw-sw: fallback tabs.create failed", tabErr); } catch (e) { /* noop */ }
+            try { console.error("dw-open: fallback tabs.create failed", tabErr); } catch (e) { /* noop */ }
           }
         } else {
-          // If URL is invalid, do not attempt to open a tab. Log for diagnostics.
-          try { console.error("dw-sw: invalid fallback URL for editor, skipping tabs.create", url); } catch (e) { /* noop */ }
+          try { console.error("dw-open: invalid fallback URL for editor, skipping tabs.create", url); } catch (e) { /* noop */ }
         }
       } catch (tabErr) {
-        // If even tab creation flow fails unexpectedly, rethrow the original windows.create error
-        throw err;
+        // swallow to avoid noisy failures in callers
       }
     }
-  }finally{
+  } finally {
     opening = false;
   }
 }
 
-chrome.action.onClicked.addListener(() => {
-  openFloatingWindow();
-});
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message && message.type === "dw-open-floating") {
-    // Defensive: only accept this message from the same extension context.
-    // This avoids accidental opens if a foreign extension or page tries to send messages.
-    try {
-      if (sender && typeof sender.id === "string" && sender.id !== chrome.runtime.id) {
-        try { console.warn("dw-sw: rejected dw-open-floating from foreign sender", sender); } catch (e) { /* noop */ }
-        sendResponse({ ok: false, reason: "forbidden-sender" });
-        return;
-      }
-    } catch (e) { /* ignore sender inspection errors */ }
-
-    openFloatingWindow();
-    sendResponse({ ok: true });
-    return;
-  }
-});
-
-chrome.windows.onRemoved.addListener(async (windowId) => {
-  const storedId = await getStoredWinId();
-  if(storedId === windowId){
-    await chrome.storage.local.remove([WIN_ID_KEY]);
-  }
-});
-
-chrome.windows.onBoundsChanged.addListener(async (window) => {
-  const storedId = await getStoredWinId();
-  if(storedId === window.id){
-    const { left, top, width, height } = window;
-    if([left, top, width, height].every(Number.isFinite)){
-      const bounds = { left, top, width, height };
-      await saveBounds(bounds);
-    }
-  }
-});

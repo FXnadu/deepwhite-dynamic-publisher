@@ -65,6 +65,8 @@
         <div class="hint">GitHub 仓库中的相对路径（与远程推送一致），例如 src/content/posts/dynamic/journals。</div>
         <div class="hint" id="targetDirSummaryRoot">本地根目录：未选择（仅用于远程推送）</div>
         <div class="hint" id="targetDirSummaryFull">实际写入路径：-</div>
+        <!-- Inline suggestion banner will be injected or shown here when a local folder suggests a targetDir -->
+        <div id="targetSuggestion" style="display:none;"></div>
       </div>
     </div>
 
@@ -79,6 +81,44 @@
           <span>启用</span>
         </label>
         <div id="pushControls" class="important-controls"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <div class="label">PicGo 上传（可选）</div>
+        <div class="hint">配置将用于图片粘贴时的自动上传。支持 PicGo HTTP 服务或 PicGo-Core。</div>
+        <input
+          class="input"
+          id="picgoEndpoint"
+          placeholder="http://localhost:36677/upload"
+          autocomplete="off"
+          type="url"
+        />
+        <div class="hint">PicGo 本地服务地址（HTTP API），示例：<code>http://localhost:36677/upload</code></div>
+
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <input type="checkbox" id="picgoAutoUpload" />
+          <span class="hint">粘贴图片时自动上传到 PicGo（关闭则提示选择）</span>
+        </label>
+
+        <div style="margin-top:8px;">
+          <div class="label">PicGo Token（可选）</div>
+          <input class="input" id="picgoToken" placeholder="PicGo Token（若配置）" autocomplete="off" type="password" />
+          <div class="hint">若 PicGo HTTP 服务启用了访问控制，可在此填写 token（仅保存在本地）。</div>
+        </div>
+        <div class="field" style="margin-top:8px;">
+          <div class="label">PicGo 上传格式</div>
+          <select class="input" id="picgoUploadFormat">
+            <option value="auto">自动（优先 multipart/form-data）</option>
+            <option value="json">JSON / Base64</option>
+          </select>
+          <div class="hint">若 PicGo 返回 “Not sending data in JSON format”，请选择 JSON / Base64。</div>
+        </div>
+        <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+          <button class="btn" id="testPicgoBtn">测试 PicGo 连接</button>
+          <span id="testPicgoResult" class="hint" style="margin-left:6px;"></span>
+        </div>
       </div>
     </div>
 
@@ -122,28 +162,7 @@
             </div>
             <div class="hint">配合“同时推送到 GitHub”使用，填入 PAT。</div>
           </div>
-          <div class="field">
-            <div class="label">PicGo 上传（可选）</div>
-            <input
-              class="input"
-              id="picgoEndpoint"
-              placeholder="http://localhost:36677/upload"
-              autocomplete="off"
-              type="url"
-            />
-            <div class="hint">PicGo 本地服务地址（HTTP API）。若使用 PicGo 上传图片，请确保 PicGo 已运行并启用 HTTP 服务或 PicGo-Core。</div>
-            <div style="margin-top:8px;">
-              <label style="display:flex;align-items:center;gap:8px;">
-                <input type="checkbox" id="picgoAutoUpload" />
-                <span class="hint">粘贴图片时自动上传到 PicGo（关闭则提示选择）</span>
-              </label>
-            </div>
-            <div style="margin-top:8px;">
-              <div class="label">PicGo Token（可选）</div>
-              <input class="input" id="picgoToken" placeholder="PicGo Token（若配置）" autocomplete="off" type="password" />
-              <div class="hint">如果你的 PicGo HTTP 服务配置了访问控制，可在此填写 token（会保存在本地）。</div>
-            </div>
-          </div>
+          <!-- PicGo settings moved to main settings area -->
         </div>
         <div style="margin-top:8px;">
           <button class="btn" id="testConnection">测试连接</button>

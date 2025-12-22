@@ -415,7 +415,8 @@ export async function getCachedSettings() {
       // PicGo defaults
       picgoEndpoint: "http://localhost:36677/upload",
       picgoToken: "",
-      picgoAutoUpload: false
+      picgoAutoUpload: false,
+      picgoUploadFormat: "auto"
       };
       __settingsCache = s;
       return s;
@@ -427,7 +428,11 @@ export async function getCachedSettings() {
         branch: "main",
         targetDir: "src/content/posts/dynamic/journals",
         commitPrefix: "dynamic:",
-        push: false
+        push: false,
+        picgoEndpoint: "http://localhost:36677/upload",
+        picgoToken: "",
+        picgoAutoUpload: false,
+        picgoUploadFormat: "auto"
       };
       __settingsCache = def;
       return def;
@@ -510,14 +515,9 @@ export function setButtonLoading(button, loading) {
   if (loading) {
     button.disabled = true;
     try {
-      // Preserve the computed color so the spinner remains visible even when text is hidden
-      const computedColor = (button && typeof window !== 'undefined')
-        ? window.getComputedStyle(button).color
-        : null;
-      if (computedColor) {
-        button.style.setProperty('--btn-loading-color', computedColor);
-        button.dataset.loadingColor = computedColor;
-      }
+      // Force black spinner color and rely on CSS to hide button text
+      button.style.setProperty('--btn-loading-color', '#000');
+      button.dataset.loadingColor = '#000';
     } catch (e) { /* ignore color detection errors */ }
     button.classList.add('btn-loading');
   } else {
@@ -584,13 +584,54 @@ export async function getSavedDirectoryHandle() {
 }
 
 export async function clearSavedDirectoryHandle() {
-  const db = await openHandleDB();
+  // Close and clear any cached DB handle first to avoid stale references.
+  try {
+    if (__cachedHandleDB) {
+      try { __cachedHandleDB.close(); } catch (e) { /* ignore close errors */ }
+      __cachedHandleDB = null;
+    }
+  } catch (e) {
+    // noop
+  }
+
+  // Delete the whole database to ensure no leftover data remains. Deleting DB
+  // is more robust than deleting a single key because it removes any stale
+  // object stores and ensures future opens create a fresh DB.
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readwrite');
-    const store = tx.objectStore(HANDLE_STORE);
-    const delReq = store.delete('dir');
-    delReq.onsuccess = () => resolve(true);
+    const delReq = indexedDB.deleteDatabase(HANDLE_DB_NAME);
+    delReq.onsuccess = () => {
+      // Also remove legacy/localStorage fallback key if present.
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem('dw_folder_handle_v1');
+        }
+      } catch (e) { /* ignore localStorage errors (e.g., in some secure contexts) */ }
+      // Notify other parts of the extension that the handle was cleared.
+      try {
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          try { window.dispatchEvent(new CustomEvent('dw:handleCleared')); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+      try {
+        if (typeof chrome !== 'undefined' && chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+          try { chrome.runtime.sendMessage({ type: 'dw:handleCleared' }); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+      // Mark the cleared timestamp in localStorage so other contexts can suppress
+      // immediate follow-up suggestions (user intentionally cleared auth).
+      try {
+        if (typeof localStorage !== 'undefined') {
+          try { localStorage.setItem('dw_handle_cleared_v1', String(Date.now())); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+      resolve(true);
+    };
     delReq.onerror = () => reject(delReq.error);
+    delReq.onblocked = () => {
+      // If deletion is blocked by other open connections, resolve so UI can
+      // proceed; callers can retry if necessary.
+      resolve(true);
+    };
   });
 }
 
@@ -690,42 +731,75 @@ export async function detectTargetDirFromHandle(dirHandle) {
     const { handle, pathParts } = queue.shift();
     if (pathParts.length >= MAX_DEPTH) continue;
     try {
-      for await (const entry of handle.values()) {
-        if (!entry || entry.kind !== 'directory') continue;
-        const childHandle = entry;
-        const childPathParts = pathParts.concat(childHandle.name || '');
+      // Prefer the standard async iterable returned by handle.entries()
+      if (typeof handle.entries === 'function') {
+        for await (const entry of handle.entries()) {
+          // entry is [name, entryHandle]
+          if (!entry || !Array.isArray(entry) || entry.length < 2) continue;
+          const entryName = entry[0];
+          const entryHandle = entry[1];
+          if (!entryHandle || entryHandle.kind !== 'directory') continue;
+          const childHandle = entryHandle;
+          const childPathParts = pathParts.concat(entryName || '');
 
-        // Try each candidate by checking if it can be resolved starting from this child
-        for (const candidate of candidates) {
-          const candidateParts = candidate.split('/');
-          // quick check: candidate's first segment should match this child's name
-          if (candidateParts[0] !== (childHandle.name || '')) continue;
-          // attempt to resolve the rest of candidateParts starting from childHandle
-          let cur = childHandle;
-          let ok = true;
-          for (let i = 1; i < candidateParts.length; i++) {
-            try {
-              cur = await cur.getDirectoryHandle(candidateParts[i], { create: false });
-            } catch (e) {
-              ok = false;
-              break;
+          // Try each candidate by checking if it can be resolved starting from this child
+          for (const candidate of candidates) {
+            const candidateParts = candidate.split('/');
+            // quick check: candidate's first segment should match this child's name
+            if (candidateParts[0] !== (entryName || '')) continue;
+            // attempt to resolve the rest of candidateParts starting from childHandle
+            let cur = childHandle;
+            let ok = true;
+            for (let i = 1; i < candidateParts.length; i++) {
+              try {
+                cur = await cur.getDirectoryHandle(candidateParts[i], { create: false });
+              } catch (e) {
+                ok = false;
+                break;
+              }
+            }
+            if (ok) {
+              // Prefer returning the canonical candidate path when found.
+              return candidate;
             }
           }
-          if (ok) {
-            // build the path relative to the original root handle
-            const relPrefix = childPathParts.join('/');
-            const rel = candidateParts.join('/');
-            // If the childPathParts is empty or already a prefix, return the candidate as-is.
-            // Prefer returning the canonical candidate path (inside repo) instead of including intermediate path.
-            return candidate;
-          }
-        }
 
-        // enqueue child for further exploration
-        queue.push({ handle: childHandle, pathParts: childPathParts });
+          // enqueue child for further exploration
+          queue.push({ handle: childHandle, pathParts: childPathParts });
+        }
+      } else if (typeof handle.values === 'function') {
+        // Some environments may expose a values() async iterable of handles;
+        // support that defensively (older/alternate implementations).
+        for await (const entryHandle of handle.values()) {
+          if (!entryHandle || entryHandle.kind !== 'directory') continue;
+          const entryName = entryHandle.name || '';
+          const childHandle = entryHandle;
+          const childPathParts = pathParts.concat(entryName);
+
+          for (const candidate of candidates) {
+            const candidateParts = candidate.split('/');
+            if (candidateParts[0] !== entryName) continue;
+            let cur = childHandle;
+            let ok = true;
+            for (let i = 1; i < candidateParts.length; i++) {
+              try {
+                cur = await cur.getDirectoryHandle(candidateParts[i], { create: false });
+              } catch (e) {
+                ok = false;
+                break;
+              }
+            }
+            if (ok) return candidate;
+          }
+
+          queue.push({ handle: childHandle, pathParts: childPathParts });
+        }
+      } else {
+        // If we can't iterate directory entries, skip exploring this handle.
+        continue;
       }
     } catch (e) {
-      // ignore directories we can't iterate
+      // ignore directories we can't iterate or permission issues
     }
   }
 
@@ -787,8 +861,31 @@ export async function githubPutFile({ owner, repo, path, branch = 'main', messag
   });
 
   if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`GitHub API error: ${res.status} ${txt}`);
+    // Try to parse JSON error body for clearer messaging, fallback to text.
+    let bodyText = '';
+    try {
+      const txt = await res.text();
+      bodyText = txt || '';
+      try {
+        const parsedErr = bodyText ? JSON.parse(bodyText) : null;
+        if (parsedErr && parsedErr.message) {
+          throw new Error(`GitHub API error: ${res.status} ${parsedErr.message}`);
+        }
+      } catch (parseErr) {
+        // not JSON or no message field - fall through to using raw text
+      }
+    } catch (readErr) {
+      bodyText = String(readErr);
+    }
+    // Provide common status hints
+    if (res.status === 401) {
+      throw new Error(`GitHub API error: 401 Unauthorized. 请检查 token 是否有效.`);
+    } else if (res.status === 403) {
+      throw new Error(`GitHub API error: 403 Forbidden. 可能是权限不足或速率限制.`);
+    } else if (res.status === 404) {
+      throw new Error(`GitHub API error: 404 Not Found. 仓库或路径不存在或无权限访问.`);
+    }
+    throw new Error(`GitHub API error: ${res.status} ${bodyText}`);
   }
   return await res.json();
 }
@@ -849,47 +946,196 @@ export function encodeBase64Utf8(str) {
  * @param {string} token - optional token to send as Authorization Bearer
  * @returns {Promise<string>} - resolved image URL
  */
-export async function uploadToPicGo(endpoint, blob, token) {
+export async function uploadToPicGo(endpoint, blob, token, options = {}) {
   if (!endpoint) throw new Error('PicGo endpoint 未配置');
-  const fd = new FormData();
-  const filename = (blob && blob.name) ? blob.name : `${formatDate()}-pasted.png`;
-  fd.append('file', blob, filename);
-  fd.append('files[]', blob, filename);
-  // include common fields some PicGo plugins support
-  fd.append('filename', filename);
+  const forceJson = !!options.forceJson;
+  // Auto-prefer JSON when targeting a local PicGo server or when explicitly requested.
+  const preferJsonAuto = forceJson || !!options.preferJson || /(^https?:\/\/(?:localhost|127\.0\.0\.1)|:36677)/i.test(endpoint);
+  try {
+    console.log('uploadToPicGo:start', { endpoint, name: blob && blob.name, type: blob && blob.type, size: blob && blob.size, forceJson, preferJsonAuto });
+  } catch (e) {}
 
-  const headers = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const headersAuth = {};
+  if (token) headersAuth['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(endpoint, { method: 'POST', body: fd, headers });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`PicGo API error: ${res.status} ${txt}`);
-  }
-  const json = await res.json().catch(() => null);
-  // heuristics to find URL in response
+  const blobToBase64 = async (b) => {
+    const arr = await b.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(arr);
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, chunk);
+    }
+    return btoa(binary);
+  };
+
   const extractUrl = (obj) => {
     if (!obj) return null;
     if (typeof obj === 'string' && obj.startsWith('http')) return obj;
+    if (obj.result && Array.isArray(obj.result) && obj.result.length > 0 && typeof obj.result[0] === 'string' && obj.result[0].startsWith('http')) {
+      return obj.result[0];
+    }
+    if (typeof obj === 'object') {
+      if (obj.url && typeof obj.url === 'string' && obj.url.startsWith('http')) return obj.url;
+      if (obj.data) {
+        if (typeof obj.data === 'string' && obj.data.startsWith('http')) return obj.data;
+        if (Array.isArray(obj.data) && obj.data.length && typeof obj.data[0] === 'string' && obj.data[0].startsWith('http')) return obj.data[0];
+        if (obj.data.url && typeof obj.data.url === 'string' && obj.data.url.startsWith('http')) return obj.data.url;
+      }
+    }
     if (Array.isArray(obj)) {
       for (const it of obj) {
         const u = extractUrl(it);
         if (u) return u;
       }
-    } else if (typeof obj === 'object') {
-      if (obj.url && typeof obj.url === 'string') return obj.url;
-      if (obj.data && (obj.data.url || (Array.isArray(obj.data) && obj.data[0] && obj.data[0].url))) {
-        return obj.data.url || (obj.data[0] && obj.data[0].url);
-      }
-      // search nested
+    }
+    if (typeof obj === 'object') {
       for (const k of Object.keys(obj)) {
-        const u = extractUrl(obj[k]);
-        if (u) return u;
+        try {
+          const u = extractUrl(obj[k]);
+          if (u) return u;
+        } catch (e) {}
       }
     }
     return null;
   };
-  const url = extractUrl(json) || null;
-  if (!url) throw new Error('无法从 PicGo 响应中解析图片 URL');
-  return url;
+
+  const attemptJsonUploads = async () => {
+    const b64 = await blobToBase64(blob);
+    const dataUrl = `data:${blob.type || 'image/png'};base64,${b64}`;
+    // small snippet for logging (avoid printing full base64)
+    const b64Snippet = b64 ? (b64.slice(0, 120) + (b64.length > 120 ? '...': '')) : '';
+    // Try a wide range of JSON field shapes that different PicGo versions/plugins accept.
+    const jsonVariants = [
+      { base64: b64 },
+      { img: dataUrl },
+      { images: [dataUrl] },
+      { images: [b64] },
+      { files: [dataUrl] },
+      { files: [b64] },
+      { data: dataUrl },
+      { data: [dataUrl] }
+    ];
+    let lastRespSnippet = '';
+    console.log('PicGo: attempting JSON upload variants', { variants: jsonVariants.length });
+    for (const variant of jsonVariants) {
+      try {
+        // Log a safe summary of the variant being sent
+        const safeVariantSummary = Object.keys(variant).reduce((acc, k) => {
+          const v = variant[k];
+          if (typeof v === 'string') {
+            acc[k] = v.length > 200 ? `${v.slice(0,120)}... (len:${v.length})` : v;
+          } else if (Array.isArray(v) && v.length && typeof v[0] === 'string') {
+            acc[k] = `${String(v[0]).slice(0,120)}... (arr len:${v.length})`;
+          } else {
+            acc[k] = v;
+          }
+          return acc;
+        }, {});
+        console.log('PicGo: JSON attempt payload summary', safeVariantSummary);
+        const headersJson = { 'Content-Type': 'application/json', ...headersAuth };
+        const jres = await fetch(endpoint, { method: 'POST', headers: headersJson, body: JSON.stringify(variant) });
+        const jbodyText = await jres.text().catch(() => null);
+        let jbody = null;
+        try { jbody = jbodyText ? JSON.parse(jbodyText) : null; } catch (e) { jbody = jbodyText; }
+        try { console.log('PicGo JSON upload response', { status: jres.status, body: jbody, rawTextLen: jbodyText ? jbodyText.length : 0 }); } catch (e) {}
+        const found = extractUrl(jbody);
+        if (found) {
+          console.log('uploadToPicGo:found url via JSON upload', found);
+          return { url: found, snippet: null };
+        }
+        lastRespSnippet = jbody ? (typeof jbody === 'string' ? jbody.slice(0,1000) : JSON.stringify(jbody).slice(0,1000)) : '(no-json-response)';
+      } catch (e) {
+        lastRespSnippet = String(e).slice(0, 1000);
+      }
+    }
+    return { url: null, snippet: lastRespSnippet };
+  };
+
+  // If we prefer JSON (local PicGo or explicit), try JSON upload first.
+  if (preferJsonAuto && !forceJson) {
+    const jsonTry = await attemptJsonUploads();
+    if (jsonTry.url) return jsonTry.url;
+    // fallthrough to form-data attempt if JSON didn't produce a URL
+  }
+
+  if (forceJson) {
+    const jsonOnly = await attemptJsonUploads();
+    if (jsonOnly.url) return jsonOnly.url;
+    throw new Error(`PicGo JSON 上传未返回图片 URL，响应：${jsonOnly.snippet || '(empty)'}`);
+  }
+
+  const fd = new FormData();
+  const filename = (blob && blob.name) ? blob.name : `${formatDate()}-pasted.png`;
+  fd.append('file', blob, filename);
+  fd.append('files[]', blob, filename);
+  fd.append('filename', filename);
+
+  let res;
+  try {
+    // For debugging: produce a small base64 snippet of the blob and log form-data keys being sent.
+    try {
+      const fdB64 = await blobToBase64(blob);
+      console.log('PicGo: form-data upload preview', { filename, contentSnippet: fdB64 ? fdB64.slice(0,120) + (fdB64.length > 120 ? '...' : '') : null, headersAuth });
+    } catch (e) { /* ignore preview errors */ }
+    res = await fetch(endpoint, { method: 'POST', body: fd, headers: headersAuth });
+  } catch (e) {
+    console.error('uploadToPicGo fetch error', e);
+    throw e;
+  }
+  try {
+    console.log('uploadToPicGo:fetch result', { status: res.status, ok: res.ok });
+  } catch (e) {}
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    // If PicGo responded with an error that indicates it expected clipboard data,
+    // try JSON variants as a fallback (some PicGo server handlers treat missing file
+    // as "upload from clipboard" and will fail).
+    const lower = String(txt || '').toLowerCase();
+    if (lower.includes('clipboard') || lower.includes('image not found') || lower.includes('upload clipboard')) {
+      try {
+        const jsonFallback = await attemptJsonUploads();
+        if (jsonFallback.url) return jsonFallback.url;
+      } catch (e) {
+        // fall through to throwing original error below
+      }
+    }
+    throw new Error(`PicGo API error: ${res.status} ${txt}`);
+  }
+
+  let json = null;
+  let rawText = null;
+  try {
+    rawText = await res.text();
+    try {
+      json = rawText ? JSON.parse(rawText) : null;
+    } catch (e) {
+      json = null;
+    }
+  } catch (e) {
+    json = await res.json().catch(() => null);
+  }
+  try { console.log('uploadToPicGo:response json', json, 'rawTextLen', rawText ? rawText.length : 0); } catch (e) {}
+
+  let url = extractUrl(json) || null;
+  if (!url && rawText) {
+    try {
+      const m = rawText.match(/https?:\/\/[^\s"']+/i);
+      if (m && m[0]) {
+        url = m[0].replace(/[,;)]$/, '');
+        console.log('uploadToPicGo:found url in raw text fallback', url);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  if (url) return url;
+
+  const msgLower = json && json.message ? String(json.message).toLowerCase() : '';
+  const jsonAttempt = await attemptJsonUploads();
+  if (jsonAttempt.url) return jsonAttempt.url;
+  const snippet = jsonAttempt.snippet || (json ? JSON.stringify(json).slice(0, 1000) : rawText ? rawText.slice(0, 1000) : '(empty)');
+  const prefix = msgLower && msgLower.includes('json') ? 'PicGo 要求 JSON 上传，但' : '无法从 PicGo 响应中解析图片 URL，响应：';
+  throw new Error(`${prefix}${snippet}`);
 }
+

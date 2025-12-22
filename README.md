@@ -123,6 +123,7 @@ deepwhite-dynamic-publisher/
 ## 开发说明
 
 - 当前版本为 **Mock 模式**，发表功能仅模拟，不会真正推送到 GitHub
+ - 当前版本为 **模拟发布模式**，发表功能仅模拟，不会真正推送到 GitHub
 - 所有数据存储在 Chrome 的 `chrome.storage` API 中
 - 使用 ES6 模块化开发
 - UI 样式对齐 Deepwhite 站点风格

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Editor Image Parse Tests</title>
+  <style>
+    body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial; padding: 20px; }
+    .ok { color: green; }
+    .fail { color: red; }
+    pre { background:#f7f7f7; padding:8px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <h1>parseImageUrlsFromText — 单元测试</h1>
+  <div id="results"></div>
+  <script type="module">
+    import { parseImageUrlsFromText } from '../js/utils.js';
+
+    const cases = [];
+    function assertEquals(actual, expected, name) {
+      const pass = JSON.stringify(actual) === JSON.stringify(expected);
+      cases.push({ name, pass, actual, expected });
+    }
+
+    // simple cases
+    assertEquals(parseImageUrlsFromText(''), [], 'empty');
+    assertEquals(parseImageUrlsFromText('![](https://example.com/a.png)'), ['https://example.com/a.png'], 'plain url');
+    assertEquals(parseImageUrlsFromText('![alt](<https://example.com/space in name.png>)'), ['https://example.com/space in name.png'], 'angle-bracket with space');
+    assertEquals(parseImageUrlsFromText('![a](https://example.com/x.png "title")'), ['https://example.com/x.png'], 'with title');
+    assertEquals(parseImageUrlsFromText('prefix ![i](<http://a.com/(1).png>) suffix'), ['http://a.com/(1).png'], 'paren in url');
+    assertEquals(parseImageUrlsFromText('![](https://ex.com/1.png) ![](https://ex.com/2.png)'), ['https://ex.com/1.png','https://ex.com/2.png'], 'multiple images');
+    assertEquals(parseImageUrlsFromText('![](<data:image/png;base64,AAA>)'), ['data:image/png;base64,AAA'], 'data uri');
+
+    const container = document.getElementById('results');
+    cases.forEach(r => {
+      const el = document.createElement('div');
+      el.className = r.pass ? 'ok' : 'fail';
+      el.innerHTML = `<strong>${r.pass ? 'PASS' : 'FAIL'}</strong> — ${r.name}
+        <pre>expected: ${JSON.stringify(r.expected)}\nactual: ${JSON.stringify(r.actual)}</pre>`;
+      container.appendChild(el);
+    });
+  </script>
+</body>
+</html>
+
+

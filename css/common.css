@@ -167,6 +167,7 @@ a:hover {
 
 .btn-loading {
   position: relative;
+  /* hide button text while showing a centered spinner */
   color: transparent !important;
 }
 
@@ -179,10 +180,11 @@ a:hover {
   left: 50%;
   margin-left: -7px;
   margin-top: -7px;
-  border: 2px solid var(--btn-loading-color, currentColor);
+  border: 2px solid var(--btn-loading-color, #000);
   border-radius: 50%;
   border-top-color: transparent;
   animation: spin 0.6s linear infinite;
+  z-index: 2;
 }
 
 @keyframes spin {
@@ -221,6 +223,35 @@ a:hover {
   outline: none;
   border-color: var(--color-text-subtle);
   box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+/* PicGo 上传格式下拉框优化：更紧凑的宽度、定制箭头与轻微浮动效果 */
+#picgoUploadFormat {
+  max-width: 260px;
+  width: auto;
+  display: inline-block;
+  padding: 8px 36px 8px 12px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: var(--color-background);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23333' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M6 8l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  font-size: 13px;
+  color: var(--color-text);
+}
+#picgoUploadFormat:focus {
+  border-color: var(--color-text-subtle);
+  box-shadow: 0 0 0 4px rgba(0,0,0,0.03);
+  transform: translateY(-1px);
+}
+.field .label + #picgoUploadFormat {
+  margin-top: 6px;
 }
 
 textarea {
@@ -263,18 +294,6 @@ textarea {
   background: var(--color-code-bg);
 }
 
-.token-wrapper {
-  position: relative;
-  display: block;
-}
-.token-wrapper .input {
-  flex: 1;
-  width: 100%;
-  padding-right: 12px;
-  box-sizing: border-box;
-  height: auto;
-}
-/* custom tooltip showing token plaintext on hover (removed; we show inline) */
 /* Prominent toggle for important options like GitHub push */
 .important-toggle {
   width: 100%;
@@ -375,6 +394,66 @@ textarea {
 .footer-right {
   justify-content: flex-end;
   gap: 10px;
+}
+
+/* Image gallery hover / empty-state interactive styles */
+.image-gallery {
+  transition: border-top-color 0.12s ease, background 0.12s ease;
+}
+.image-gallery:hover {
+  border-top-color: var(--color-text-subtle);
+}
+.image-gallery.empty {
+  cursor: pointer;
+}
+.image-gallery .empty-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 0;
+}
+.image-gallery .empty-box {
+  width: 140px;
+  height: 86px;
+  border: 2px dashed var(--color-border);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-subtle);
+  background: transparent;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.image-gallery .empty-box:hover {
+  border-color: var(--color-text-strong);
+  color: var(--color-text-strong);
+  background: rgba(0,0,0,0.02);
+}
+.image-gallery .add-symbol {
+  font-size: 28px;
+  line-height: 1;
+}
+.image-gallery .upload-panel {
+  display: none;
+  width: 100%;
+  padding: 10px;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+.image-gallery.open .upload-panel {
+  display: flex;
+  /* drawer-like appearance: slide up from bottom of gallery */
+  transform: translateY(0);
+  transition: transform 0.18s ease, opacity 0.12s ease;
+  opacity: 1;
+}
+.image-gallery .upload-panel {
+  transform: translateY(8px);
+  opacity: 0;
 }
 
 .status-ok {
@@ -671,6 +750,35 @@ textarea {
   background: var(--color-code-bg);
 }
 
+/* SVG icons inside small buttons: align, size and inherit color */
+.btn-icon svg,
+.copy-path-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  stroke: currentColor;
+  fill: none;
+  vertical-align: middle;
+}
+
+/* Slightly tighter padding for icon-only buttons to avoid looking bulky */
+.btn-icon {
+  padding: 6px;
+  width: 36px;
+  height: 36px;
+}
+
+/* Delete button (danger) visual refinement */
+.btn-text-danger svg {
+  stroke: currentColor;
+}
+
+/* Copy-path inline button svg slightly smaller */
+.copy-path-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* icon-only: larger icon without rectangle */
 .icon-only {
   display: inline-flex;
@@ -689,6 +797,15 @@ textarea {
 
 .icon-only:hover {
   color: var(--color-text-strong);
+}
+
+/* Make the settings icon red on hover and show pointer cursor */
+#openSettings {
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+#openSettings:hover {
+  color: var(--color-error);
 }
 
 .btn-text {
@@ -730,9 +847,12 @@ textarea {
 /* Danger text button (used for clear) */
 .btn-text-danger {
   color: var(--color-error);
-  border: 1px solid transparent;
   padding: 6px 10px;
   border-radius: 8px;
+}
+.btn-text-danger:not(.btn-icon) {
+  /* only non-icon text buttons receive an explicit transparent border to maintain layout */
+  border: 1px solid transparent;
 }
 .btn-text-danger:hover {
   background: rgba(239, 68, 68, 0.1); /* light red background on hover */

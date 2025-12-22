@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Deepwhite Dynamic Publisher (Mock)",
-  "version": "0.6.2",
-  "description": "Lightweight editor for Deepwhite 11ty dynamic journals. UI matches site style. Publish is mocked.",
+  "name": "Deepwhite Dynamic Publisher",
+  "version": "0.6.3",
+  "description": "Lightweight editor for Deepwhite 11ty dynamic journals. UI matches site style.",
   "action": {
     "default_title": "New Dynamic Journal"
   },
@@ -16,7 +16,9 @@
     "windows"
   ],
   "host_permissions": [
-    "https://api.github.com/*"
+    "https://api.github.com/*",
+    "http://127.0.0.1:36677/*",
+    "http://localhost:36677/*"
   ],
   "background": {
     "service_worker": "js/sw.js"

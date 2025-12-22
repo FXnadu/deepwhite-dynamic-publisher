@@ -1,4 +1,4 @@
-import { showToast, setButtonLoading, parseRepoUrl, getCachedSettings, setCachedSettings } from './utils.js';
+import { showToast, setButtonLoading, parseRepoUrl, getCachedSettings, setCachedSettings, showConfirm } from './utils.js';
 
 const SETTINGS_KEY = "dw_settings_v1";
 const FOLDER_DB_KEY = "dw_folder_handle_v1";
@@ -75,6 +75,9 @@ function normalizeRelativePath(value) {
   const picgoEndpointInput = document.getElementById("picgoEndpoint");
   const picgoAutoUploadInput = document.getElementById("picgoAutoUpload");
   const picgoTokenInput = document.getElementById("picgoToken");
+  const picgoUploadFormatSelect = document.getElementById("picgoUploadFormat");
+  const testPicgoBtn = document.getElementById("testPicgoBtn");
+  const testPicgoResultEl = document.getElementById("testPicgoResult");
   const pushToGithub = document.getElementById("pushToGithub");
   const advancedToggle = document.getElementById("advancedToggle");
   const advancedSection = document.getElementById("advancedSection");
@@ -91,6 +94,102 @@ function normalizeRelativePath(value) {
   const targetDirSummaryFullEl = document.getElementById("targetDirSummaryFull");
   let currentRootName = '';
   const DEFAULT_TARGET_DIR = "src/content/posts/dynamic/journals";
+
+  // Inline suggestion banner state and rendering.
+  // This replaces transient toasts for Target Dir suggestions with a dismissible inline banner
+  // that the user can Accept (apply) or Dismiss (persistently ignore this suggested value).
+  const SUGGEST_DISMISS_KEY = 'dw_target_suggestion_dismissed_v1';
+
+  const shouldShowSuggestionFor = async (suggested) => {
+    try {
+      if (!suggested) return false;
+      const obj = await chrome.storage.local.get([SUGGEST_DISMISS_KEY]);
+      const dismissed = obj && obj[SUGGEST_DISMISS_KEY] ? String(obj[SUGGEST_DISMISS_KEY]) : '';
+      // If user previously dismissed this exact suggestion, don't show again.
+      if (dismissed && dismissed === suggested) return false;
+      return true;
+    } catch (e) {
+      return true;
+    }
+  };
+
+  const showTargetSuggestionBanner = async (suggested) => {
+    try {
+      if (!suggested) return;
+      // ensure DOM element exists (create if missing)
+      let banner = document.getElementById('targetSuggestion');
+      if (!banner) {
+        const container = document.createElement('div');
+        container.id = 'targetSuggestion';
+        container.style.display = 'none';
+        container.style.marginTop = '8px';
+        container.innerHTML = `
+          <div class="hint suggestion-banner" style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+            <div id="targetSuggestionText" style="flex:1;"></div>
+            <div style="display:flex;gap:8px;margin-left:12px;">
+              <button id="applySuggestionBtn" class="btn btn-primary">采纳</button>
+              <button id="dismissSuggestionBtn" class="btn">忽略</button>
+            </div>
+          </div>
+        `;
+        const parent = document.getElementById('targetDir')?.closest('.field') || document.querySelector('.container');
+        if (parent) parent.appendChild(container);
+        banner = container;
+      }
+
+      // Skip showing if user previously dismissed this suggestion
+      if (!(await shouldShowSuggestionFor(suggested))) {
+        banner.style.display = 'none';
+        return;
+      }
+
+      const textEl = document.getElementById('targetSuggestionText');
+      const applyBtn = document.getElementById('applySuggestionBtn');
+      const dismissBtn = document.getElementById('dismissSuggestionBtn');
+      if (textEl) textEl.textContent = `建议将 Target Dir 设为：${suggested}`;
+      banner.style.display = 'block';
+
+      const cleanup = () => {
+        try { banner.style.display = 'none'; } catch (e) { /* ignore */ }
+        if (applyBtn) applyBtn.removeEventListener('click', onApply);
+        if (dismissBtn) dismissBtn.removeEventListener('click', onDismiss);
+      };
+
+      const onApply = () => {
+        try {
+          const normalized = sanitizeTargetDirValue(suggested) || suggested;
+          targetDir.value = normalized;
+          updateTargetDirSummary();
+          // Clear any stored dismissal for this suggestion so it won't be treated as dismissed.
+          try { chrome.storage.local.remove(SUGGEST_DISMISS_KEY); } catch (e) { /* ignore */ }
+        } finally {
+          cleanup();
+          showToast('已应用建议的 Target Dir', 'success');
+        }
+      };
+
+      const onDismiss = async () => {
+        try {
+          const payload = String(suggested);
+          try { await chrome.storage.local.set({ [SUGGEST_DISMISS_KEY]: payload }); } catch (e) { /* ignore */ }
+        } finally {
+          cleanup();
+          showToast('已忽略该建议', 'warning');
+        }
+      };
+
+      if (applyBtn) {
+        applyBtn.removeEventListener('click', onApply);
+        applyBtn.addEventListener('click', onApply);
+      }
+      if (dismissBtn) {
+        dismissBtn.removeEventListener('click', onDismiss);
+        dismissBtn.addEventListener('click', onDismiss);
+      }
+    } catch (e) {
+      // fail silently
+    }
+  };
 
   if (!repoUrl || !branch || !targetDir || !commitPrefix || !saveBtn) {
     console.error("缺少必要的DOM元素");
@@ -168,6 +267,7 @@ function normalizeRelativePath(value) {
   commitPrefix.value = s.commitPrefix || "dynamic:";
   if (picgoEndpointInput) picgoEndpointInput.value = s.picgoEndpoint || "";
   if (picgoAutoUploadInput) picgoAutoUploadInput.checked = !!s.picgoAutoUpload;
+  if (picgoUploadFormatSelect) picgoUploadFormatSelect.value = s.picgoUploadFormat || 'auto';
   updateTargetDirSummary();
   targetDir.addEventListener('input', () => updateTargetDirSummary());
   targetDir.addEventListener('blur', () => {
@@ -185,6 +285,8 @@ function normalizeRelativePath(value) {
     });
   }
 
+  // PicGo collapse/expand UI removed — PicGo inputs are visible by default in the main settings area.
+
   // load token
   try {
     const tokenObj = await chrome.storage.local.get([TOKEN_KEY]);
@@ -195,28 +297,75 @@ function normalizeRelativePath(value) {
     console.warn("无法加载 token:", e);
   }
 
-  // Reveal token plaintext in the input on focus/click; hide on blur
-  try {
-    if (githubTokenInput) {
-      // ensure initial state is masked
-      githubTokenInput.type = 'password';
+  // PicGo connection test handler
+  if (testPicgoBtn) {
+    testPicgoBtn.addEventListener('click', async () => {
+      if (!testPicgoResultEl) return;
+      const endpoint = picgoEndpointInput ? (picgoEndpointInput.value || '').trim() : '';
+      const token = picgoTokenInput ? (picgoTokenInput.value || '').trim() : '';
+      testPicgoResultEl.textContent = '';
+      testPicgoResultEl.className = 'hint';
+      if (!endpoint) {
+        testPicgoResultEl.textContent = '请先填写 PicGo Endpoint';
+        testPicgoResultEl.className = 'hint status-err';
+        return;
+      }
+      setButtonLoading(testPicgoBtn, true);
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        // First try a lightweight OPTIONS probe to check reachability without sending payload
+        let probeOk = false;
+        try {
+          const probeRes = await fetch(endpoint, { method: 'OPTIONS', signal: controller.signal });
+          // 2xx/3xx/4xx/5xx all indicate the host responded; treat 2xx/3xx as reachable.
+          if (probeRes && (probeRes.status >= 200 && probeRes.status < 400)) {
+            probeOk = true;
+            testPicgoResultEl.textContent = `可访问（HTTP ${probeRes.status}）`;
+            testPicgoResultEl.className = 'hint status-success';
+          }
+        } catch (probeErr) {
+          // probe may fail if server disallows OPTIONS; ignore and fall back to POST probe
+        } finally {
+          clearTimeout(timeout);
+        }
 
-      const showPlaintext = () => {
-        try { githubTokenInput.type = 'text'; } catch (e) {}
-      };
-      const hidePlaintext = () => {
-        try { githubTokenInput.type = 'password'; } catch (e) {}
-      };
-
-      githubTokenInput.addEventListener('focus', showPlaintext);
-      githubTokenInput.addEventListener('click', showPlaintext);
-      githubTokenInput.addEventListener('blur', hidePlaintext);
-    }
-  } catch (e) {
-    // noop
+        if (!probeOk) {
+          // Fallback: try a small POST with synthetic blob to validate upload endpoint
+          const fd = new FormData();
+          const blob = new Blob(['ping'], { type: 'image/png' });
+          fd.append('file', blob, 'dw-ping.png');
+          const controller2 = new AbortController();
+          const timeout2 = setTimeout(() => controller2.abort(), 8000);
+          try {
+            const headers = {};
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const res = await fetch(endpoint, { method: 'POST', body: fd, headers, signal: controller2.signal });
+            if (res.ok) {
+              testPicgoResultEl.textContent = `可上传（HTTP ${res.status}）`;
+              testPicgoResultEl.className = 'hint status-success';
+            } else {
+              const txt = await res.text().catch(() => '');
+              testPicgoResultEl.textContent = `错误 ${res.status}: ${txt ? txt.slice(0, 200) : res.statusText}`;
+              testPicgoResultEl.className = 'hint status-err';
+            }
+          } finally {
+            clearTimeout(timeout2);
+          }
+        }
+      } catch (e) {
+        if (e && e.name === 'AbortError') {
+          testPicgoResultEl.textContent = '请求超时（服务器未响应）';
+        } else {
+          testPicgoResultEl.textContent = `测试失败：${e && e.message ? e.message : String(e)}`;
+        }
+        testPicgoResultEl.className = 'hint status-err';
+        console.error('PicGo 测试连接失败:', e);
+      } finally {
+        setButtonLoading(testPicgoBtn, false);
+      }
+    });
   }
-
-  // Token visibility control removed — no-op
 
   // load saved folder name display (helper in utils will persist handle in IDB)
   try {
@@ -228,10 +377,22 @@ function normalizeRelativePath(value) {
         if (window.detectTargetDirFromHandle) {
           try {
             const suggested = await window.detectTargetDirFromHandle(savedHandle);
-            if (suggested && (!s.targetDir || s.targetDir === DEFAULT_TARGET_DIR)) {
+              if (suggested && (!s.targetDir || s.targetDir === DEFAULT_TARGET_DIR)) {
               const normalizedSuggested = sanitizeTargetDirValue(suggested, { silent: true }) || suggested;
               targetDir.value = normalizedSuggested;
-              showToast(`建议将 Target Dir 设为：${suggested}`, "success", 2000);
+              // Suppress the suggestion if the user recently cleared saved handle.
+              try {
+                const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem('dw_handle_cleared_v1') : null;
+                const clearedAt = raw ? parseInt(raw, 10) : 0;
+                const now = Date.now();
+                const SUPPRESS_WINDOW_MS = 24 * 3600 * 1000; // 24 hours
+                if (!clearedAt || (now - clearedAt) > SUPPRESS_WINDOW_MS) {
+                  // Show an inline suggestion banner allowing accept/dismiss.
+                  await showTargetSuggestionBanner(suggested);
+                }
+              } catch (e) {
+                await showTargetSuggestionBanner(suggested);
+              }
               updateTargetDirSummary();
             }
           } catch (e) {
@@ -263,7 +424,8 @@ function normalizeRelativePath(value) {
       commitPrefix: commitPrefix.value.trim() || "dynamic:",
       push: !!(pushToGithub && pushToGithub.checked),
       picgoEndpoint: picgoEndpointInput ? (picgoEndpointInput.value || '').trim() : '',
-      picgoAutoUpload: picgoAutoUploadInput ? !!picgoAutoUploadInput.checked : false
+      picgoAutoUpload: picgoAutoUploadInput ? !!picgoAutoUploadInput.checked : false,
+      picgoUploadFormat: picgoUploadFormatSelect ? (picgoUploadFormatSelect.value || 'auto') : 'auto'
     };
 
     // 验证
@@ -339,6 +501,8 @@ function normalizeRelativePath(value) {
         // save handle via helper on window (implemented in utils.js)
         if (window.saveDirectoryHandle) {
           await window.saveDirectoryHandle(dirHandle);
+          // clearing the cleared flag because the user just re-authorized a folder
+          try { if (typeof localStorage !== 'undefined') localStorage.removeItem('dw_handle_cleared_v1'); } catch (e) { /* ignore */ }
         } else {
           // fallback: try storing name in localStorage
           localStorage.setItem(FOLDER_DB_KEY, dirHandle.name || 'selected');
@@ -352,7 +516,19 @@ function normalizeRelativePath(value) {
               const normalizedSuggested = sanitizeTargetDirValue(suggested) || suggested;
               targetDir.value = normalizedSuggested;
               updateTargetDirSummary();
-              showToast(`已保存本地文件夹，建议 Target Dir: ${suggested}`, "success", 2200);
+              // Don't show suggestion toast if the user recently cleared the saved handle.
+              try {
+                const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem('dw_handle_cleared_v1') : null;
+                const clearedAt = raw ? parseInt(raw, 10) : 0;
+                const now = Date.now();
+                const SUPPRESS_WINDOW_MS = 24 * 3600 * 1000; // suppress for 24 hours after clearing
+                  if (!clearedAt || (now - clearedAt) > SUPPRESS_WINDOW_MS) {
+                    // Show an inline suggestion banner allowing accept/dismiss.
+                    await showTargetSuggestionBanner(suggested);
+                  }
+              } catch (e) {
+                  await showTargetSuggestionBanner(suggested);
+              }
             } else {
               showToast("已保存本地文件夹", "success");
             }
@@ -382,13 +558,15 @@ function normalizeRelativePath(value) {
   if (clearFolderBtn) {
     clearFolderBtn.addEventListener("click", async () => {
       try {
+        const ok = await showConfirm('解除本地授权', '确定要解除本地文件夹授权并清除已保存的本地句柄吗？此操作不会删除仓库内容，你之后仍可重新授权。', '解除授权', '取消');
+        if (!ok) return;
         if (window.clearSavedDirectoryHandle) {
           await window.clearSavedDirectoryHandle();
         } else {
           localStorage.removeItem(FOLDER_DB_KEY);
         }
         setCurrentRootName('');
-        showToast("已清除本地文件夹设置", "success");
+        showToast("已解除本地授权并清理本地数据", "success");
       } catch (e) {
         console.error("清除失败:", e);
         showToast("清除失败", "error");
