@@ -244,9 +244,101 @@ textarea {
   flex-wrap: wrap;
 }
 
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.folder-path {
+  flex: 1;
+  min-width: 200px;
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  color: var(--color-text-subtle);
+  padding: 8px 10px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-code-bg);
+}
+
+.token-wrapper {
+  position: relative;
+  display: block;
+}
+.token-wrapper .input {
+  flex: 1;
+  width: 100%;
+  padding-right: 12px;
+  box-sizing: border-box;
+  height: auto;
+}
+/* custom tooltip showing token plaintext on hover (removed; we show inline) */
+/* Prominent toggle for important options like GitHub push */
+.important-toggle {
+  width: 100%;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--color-border);
+  background: linear-gradient(135deg, rgba(255,255,255,0.92), rgba(246,246,246,0.92));
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.important-text {
+  flex: 1;
+  min-width: 220px;
+}
+
+.important-toggle .important-label {
+  font-weight: 600;
+  color: var(--color-text-strong);
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.important-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-subtle);
+}
+
+.important-switch input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  transform: scale(1.1);
+  accent-color: var(--color-text-strong);
+}
+
+.important-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
 .row .field {
   flex: 1;
   min-width: 220px;
+}
+
+/* Advanced settings: stack fields vertically and make each field full width */
+#advancedSection .row {
+  flex-direction: column;
+  gap: 12px;
+}
+#advancedSection .row .field {
+  flex: none;
+  width: 100%;
+  min-width: 0;
 }
 
 .footer {
@@ -353,6 +445,40 @@ textarea {
   animation: slideUp var(--transition-base);
 }
 
+/* Larger modal variant used by choice dialogs (preview-heavy) */
+.modal.modal-choice {
+  max-width: 920px;
+  width: 94%;
+  max-height: 90vh;
+}
+
+.modal-choice .choice-preview {
+  max-height: 56vh;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  padding: 12px;
+  margin-top: 8px;
+  background: var(--color-code-bg);
+  color: var(--color-text);
+  white-space: pre-wrap;
+  font-family: var(--font-family-mono);
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+/* Ensure modal-choice is responsive on very small screens */
+@media (max-width: 520px) {
+  .modal.modal-choice {
+    width: 96%;
+    max-width: 96%;
+    max-height: 92vh;
+    padding: 18px;
+  }
+  .modal-choice .choice-preview {
+    max-height: 44vh;
+  }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -397,17 +523,33 @@ textarea {
 
 /* Toast notification */
 .toast {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
+  /* Positioning moved to #toast-container to allow stacking multiple toasts */
+  position: relative;
   background: var(--color-background);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 12px 16px;
   box-shadow: var(--shadow-md);
-  z-index: 2000;
-  animation: slideInRight var(--transition-base);
   max-width: 300px;
+  cursor: pointer;
+}
+
+/* Container for stacked toasts (bottom-right) */
+#toast-container {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+  z-index: 2000;
+  pointer-events: none; /* allow toasts themselves to handle pointer events */
+}
+
+#toast-container .toast {
+  pointer-events: auto;
+  animation: none; /* animations handled via inline styles for smoother stacking */
 }
 
 @keyframes slideInRight {
@@ -431,6 +573,28 @@ textarea {
 
 .toast-warning {
   border-left: 3px solid var(--color-warning);
+}
+
+/* saved-flash styles removed */
+
+/* copy-path small inline button next to file hint */
+.copy-path-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-meta);
+  font-size: 12px;
+  cursor: pointer;
+}
+.copy-path-btn:hover {
+  background: rgba(0,0,0,0.03);
+  color: var(--color-text-strong);
+  border-color: var(--color-border);
 }
 
 /* Responsive */
@@ -596,5 +760,3 @@ textarea {
   align-items: center;
   gap: 8px;
 }
-
-

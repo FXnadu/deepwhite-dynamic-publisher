@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Deepwhite Publisher Settings</title>
+<title>Deepwhite 发布器设置</title>
 <link rel="stylesheet" href="css/common.css" />
 <style>
 .field .hint {
@@ -19,8 +19,8 @@
   <div class="container">
     <div class="header">
       <div class="brand">
-        <h1 class="title">Settings</h1>
-        <p class="subtitle">github repo & journal path</p>
+        <h1 class="title">发布器设置</h1>
+        <p class="subtitle">博客仓库与内容路径</p>
       </div>
       <div class="actions">
         <button class="btn btn-primary" id="save">保存</button>
@@ -29,18 +29,18 @@
     <div class="row" style="align-items:center;">
       <div class="field">
         <div class="label">本地保存文件夹</div>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <button class="btn" id="pickFolder">选择文件夹</button>
-          <button class="btn" id="clearFolder">清除</button>
-          <div id="folderName" class="hint" style="margin-left:8px;">未选择</div>
+        <div class="folder-row">
+          <button class="btn btn-primary" id="pickFolder">选择文件夹</button>
+          <div id="folderName" class="folder-path">未选择</div>
+          <button class="btn btn-danger" id="clearFolder">解除授权</button>
         </div>
-        <div class="hint">选择本地目标文件夹（浏览器文件系统访问 API）。用于本地创建 md 文件。</div>
+        <div class="hint">建议选择你的博客仓库根目录（例如 deepwhite-11ty），以便内容目录与 GitHub 路径完全一致。解除授权会移除当前授权并回到仅推送模式。</div>
       </div>
     </div>
 
     <div class="row">
       <div class="field">
-        <div class="label">Repository</div>
+        <div class="label">远程仓库</div>
         <input
           class="input"
           id="repoUrl"
@@ -54,18 +54,7 @@
 
     <div class="row">
       <div class="field">
-        <div class="label">Branch</div>
-        <input 
-          class="input" 
-          id="branch" 
-          placeholder="main" 
-          autocomplete="off"
-          required
-        />
-        <div class="hint">Git 分支名称</div>
-      </div>
-      <div class="field">
-        <div class="label">Target Dir</div>
+        <div class="label">仓库内内容目录（GitHub 路径）</div>
         <input 
           class="input" 
           id="targetDir" 
@@ -73,44 +62,87 @@
           autocomplete="off"
           required
         />
-        <div class="hint">仓库内目标目录（文件名 YYYY-MM-DD.md）</div>
+        <div class="hint">GitHub 仓库中的相对路径（与远程推送一致），例如 src/content/posts/dynamic/journals。</div>
+        <div class="hint" id="targetDirSummaryRoot">本地根目录：未选择（仅用于远程推送）</div>
+        <div class="hint" id="targetDirSummaryFull">实际写入路径：-</div>
       </div>
     </div>
 
     <div class="row">
-      <div class="field" style="display:flex; align-items:center; gap:12px;">
-        <label style="display:flex; align-items:center; gap:8px;">
+      <div class="field important-toggle">
+        <div class="important-text">
+          <div class="important-label">同时推送到 GitHub</div>
+          <div class="hint">默认仅写入本地仓库；勾选后会使用 Token 调用 GitHub API 推送到远程。</div>
+        </div>
+        <label class="important-switch">
           <input type="checkbox" id="pushToGithub" />
-          <span>推送到 GitHub</span>
+          <span>启用</span>
         </label>
-        <div class="hint">开启后每次发表会向远程仓库推送</div>
+        <div id="pushControls" class="important-controls"></div>
       </div>
     </div>
 
     <div style="margin-top:8px;">
-      <button id="advancedToggle" class="btn">高级选项</button>
+      <button id="advancedToggle" class="btn">高级设置</button>
       <div id="advancedSection" style="display:none; margin-top:10px;">
         <div class="row">
           <div class="field">
-            <div class="label">Commit Prefix</div>
+            <div class="label">提交信息前缀</div>
             <input 
               class="input" 
               id="commitPrefix" 
               placeholder="dynamic:" 
               autocomplete="off"
             />
-            <div class="hint">Git 提交信息前缀（可选）</div>
+            <div class="hint">用于生成提交信息（如 dynamic: YYYY-MM-DD.md），可留空。</div>
+          </div>
+          <div class="field">
+            <div class="label">分支</div>
+            <input 
+              class="input" 
+              id="branch" 
+              placeholder="main" 
+              autocomplete="off"
+              required
+            />
+            <div class="hint">Git 分支名称（高级设置）</div>
           </div>
           <div class="field">
             <div class="label">GitHub Token</div>
-            <input 
-              class="input" 
-              id="githubToken" 
-              placeholder="个人访问令牌（PAT）" 
+            <div class="token-wrapper">
+              <input
+                class="input"
+                id="githubToken"
+                placeholder="个人访问令牌（PAT）"
+                autocomplete="off"
+                type="password"
+                aria-label="GitHub Token"
+              />
+              <!-- token visibility control removed -->
+            </div>
+            <div class="hint">配合“同时推送到 GitHub”使用，填入 PAT。</div>
+          </div>
+          <div class="field">
+            <div class="label">PicGo 上传（可选）</div>
+            <input
+              class="input"
+              id="picgoEndpoint"
+              placeholder="http://localhost:36677/upload"
               autocomplete="off"
-              type="password"
+              type="url"
             />
-            <div class="hint">用于推送到 GitHub（仅在开启推送时需要）。</div>
+            <div class="hint">PicGo 本地服务地址（HTTP API）。若使用 PicGo 上传图片，请确保 PicGo 已运行并启用 HTTP 服务或 PicGo-Core。</div>
+            <div style="margin-top:8px;">
+              <label style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" id="picgoAutoUpload" />
+                <span class="hint">粘贴图片时自动上传到 PicGo（关闭则提示选择）</span>
+              </label>
+            </div>
+            <div style="margin-top:8px;">
+              <div class="label">PicGo Token（可选）</div>
+              <input class="input" id="picgoToken" placeholder="PicGo Token（若配置）" autocomplete="off" type="password" />
+              <div class="hint">如果你的 PicGo HTTP 服务配置了访问控制，可在此填写 token（会保存在本地）。</div>
+            </div>
           </div>
         </div>
         <div style="margin-top:8px;">
@@ -122,7 +154,7 @@
 
     <div class="footer">
       <div class="hint" id="savedHint"></div>
-      <div class="hint">UI 基于站点 style.css 变量：白底、细边框、胶囊按钮</div>
+      <div class="hint">表单与浮窗样式沿用 Deepwhite 设计系统。</div>
     </div>
   </div>
 <script type="module" src="js/options.js"></script>

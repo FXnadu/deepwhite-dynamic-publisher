@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Utils Tests</title>
+  <style>
+    body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial; padding: 20px; }
+    .ok { color: green; }
+    .fail { color: red; }
+    pre { background:#f7f7f7; padding:8px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <h1>utils.js — 简单单元测试</h1>
+  <div id="results"></div>
+  <script type="module">
+    import { countWords, parseRepoUrl } from '../js/utils.js';
+
+    const results = [];
+
+    function assertEquals(actual, expected, name) {
+      const pass = JSON.stringify(actual) === JSON.stringify(expected);
+      results.push({ name, pass, actual, expected });
+    }
+
+    // Tests for countWords (中英文混合)
+    assertEquals(countWords(''), 0, 'countWords empty');
+    assertEquals(countWords('你好'), 2, 'countWords chinese only (2 chars)');
+    assertEquals(countWords('hello world'), 2, 'countWords english words');
+    assertEquals(countWords('你好 world'), 3, 'countWords mixed');
+    assertEquals(countWords('  多  空格   test  '), 3, 'countWords trim and multiple spaces');
+
+    // Tests for parseRepoUrl
+    assertEquals(parseRepoUrl('owner/repo'), { owner: 'owner', repo: 'repo' }, 'parseRepoUrl owner/repo');
+    assertEquals(parseRepoUrl('https://github.com/foo/bar.git'), { owner: 'foo', repo: 'bar' }, 'parseRepoUrl https url');
+    assertEquals(parseRepoUrl('git@github.com:alice/project.git'), { owner: 'alice', repo: 'project' }, 'parseRepoUrl ssh url');
+    assertEquals(parseRepoUrl('invalid'), null, 'parseRepoUrl invalid returns null');
+
+    // Render results
+    const container = document.getElementById('results');
+    results.forEach(r => {
+      const el = document.createElement('div');
+      el.className = r.pass ? 'ok' : 'fail';
+      el.innerHTML = `<strong>${r.pass ? 'PASS' : 'FAIL'}</strong> — ${r.name}
+        <pre>expected: ${JSON.stringify(r.expected)}\nactual: ${JSON.stringify(r.actual)}</pre>`;
+      container.appendChild(el);
+    });
+  </script>
+</body>
+</html>
+
+

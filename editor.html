@@ -19,6 +19,7 @@
   margin: 0;
   padding: 18px 20px;
   border-bottom: 1px solid var(--color-border);
+  position: relative;
 }
 
 .card {
@@ -42,11 +43,88 @@
   border-radius: 0;
   padding: 16px;
   font-size: 14px;
+  resize: none;
+}
+
+.editor-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.editor-wrapper .highlight {
+  position: absolute;
+  inset: 0;
+  padding: 16px;
+  margin: 0;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  font-family: inherit;
+  /* Slightly dim default text so tokens stand out */
+  color: var(--color-fg, #111);
+}
+.editor-wrapper textarea {
+  position: relative;
+  background: transparent;
+  color: transparent; /* hide plain text so highlight layer shows through */
+  caret-color: var(--color-fg, #111); /* caret remains visible */
+  z-index: 2;
+  resize: none;
+  padding: 16px;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  line-height: 1.4;
+  font-family: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.md-sym.md-heading {
+  color: #1e88e5;
+  font-weight: 600;
+}
+.md-code {
+  color: #6a1b9a;
+  background: rgba(106,27,154,0.06);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.md-sym.md-bold {
+  color: #e65100;
+  font-weight: 600;
+}
+.md-link {
+  color: #0b8043;
 }
 
 .footer {
   flex-shrink: 0;
-  /* let global CSS handle padding/height to keep consistent across pages */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.footer-left,
+.footer-center,
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.footer-center {
+  flex: 1;
+  justify-content: center;
 }
 
 #wordCount {
@@ -58,6 +136,138 @@
   color: var(--color-meta);
   margin-top: 4px;
 }
+
+/* Publish button styles and responsive top-right placement */
+#publishAndPush {
+  min-width: 120px;
+  padding: 8px 14px;
+  border-radius: 6px;
+}
+
+.header .actions {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-rounded {
+  border-radius: 8px;
+  padding: 6px 10px;
+  transition: box-shadow 120ms ease, transform 120ms ease;
+}
+
+@media (max-width: 640px) {
+  /* Small screens: keep publish button rectangular and positioned within header (no floating) */
+  .header .actions {
+    /* revert to absolute positioning used for larger screens so it stays in the header flow */
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    z-index: 1300;
+    background: transparent;
+    padding: 0;
+    border-radius: 6px;
+  }
+
+  #publishAndPush {
+    /* restore rectangular appearance from desktop */
+    border-radius: 6px;
+    padding: 8px 14px;
+    box-shadow: none;
+    transition: box-shadow 160ms ease, transform 160ms ease;
+    min-width: 120px;
+  }
+  #publishAndPush:hover {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    transform: none;
+  }
+}
+
+</style>
+<style>
+/* Image gallery at editor bottom */
+.image-gallery {
+  border-top: 1px dashed var(--color-border);
+  padding: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow-x: auto;
+  background: rgba(250,250,250,0.6);
+}
+.image-item {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  width: 120px;
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-subtle);
+}
+.image-item img {
+  width: 100%;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-code-bg);
+}
+.image-item .meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.image-item .status {
+  font-size: 11px;
+  color: var(--color-meta);
+}
+.image-item .status.uploaded {
+  color: var(--color-success);
+}
+.image-item a {
+  color: inherit;
+  text-decoration: none;
+}
+</style>
+<style>
+/* Image preview modal */
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2200;
+  cursor: zoom-out;
+}
+.image-preview-modal {
+  max-width: 95%;
+  max-height: 95%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-preview-modal img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  background: #fff;
+}
+</style>
 </style>
 </head>
 <body>
@@ -68,35 +278,42 @@
           <h1 class="title">New Dynamic</h1>
           <p class="subtitle" id="fileHint">YYYY-MM-DD.md → src/content/posts/dynamic/journals/</p>
         </div>
-        <div class="actions" style="display:flex; gap:8px; align-items:center;">
-          <button class="btn btn-primary lg" id="publishAndPush" title="发表并推送">发表并推送</button>
+        <div class="actions" aria-hidden="false">
+          <button id="publishAndPush" class="btn btn-primary lg" title="发表并推送" aria-label="发表并推送">发表并推送</button>
         </div>
       </div>
     </div>
 
-    <div class="card">
+      <div class="card">
       <div class="card-top">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
           <div>
-            <div class="hint" id="draftState">草稿：本地自动保存</div>
+        <div class="hint" id="draftState">草稿：本地自动保存</div>
           </div>
           <div class="hint" id="clock"></div>
         </div>
       </div>
-      <textarea 
-        id="editor" 
-        placeholder="写点什么… 支持 Markdown 原生语法（图片链接、表格等）"
-        spellcheck="true"
-      ></textarea>
+      <div class="editor-wrapper">
+        <pre id="editorHighlight" class="highlight" aria-hidden="true"></pre>
+        <textarea 
+          id="editor" 
+          placeholder="写点什么… 支持 Markdown 原生语法（图片链接、表格等）"
+          spellcheck="true"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+        ></textarea>
+      </div>
+      <!-- Image gallery: shows pasted/uploaded images -->
+      <div id="imageGallery" class="image-gallery" aria-live="polite" aria-label="已添加图片"></div>
     </div>
 
-    <div class="footer">
+      <div class="footer">
       <div class="footer-left">
         <div class="badge">
           <span>状态：</span>
           <span id="status" class="status-ok">就绪</span>
         </div>
-        <button id="clearDraft" class="btn-text btn-text-danger" title="清空" aria-label="清空">清空</button>
       </div>
       <div class="footer-center">
       </div>

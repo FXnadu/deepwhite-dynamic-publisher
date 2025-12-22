@@ -88,6 +88,4 @@ document.addEventListener("DOMContentLoaded", () => {
     openBtn.addEventListener("click", openWindow);
   }
   
-  // 自动打开窗口
-  openWindow();
 });
