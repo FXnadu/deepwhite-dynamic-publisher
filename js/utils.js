@@ -509,10 +509,26 @@ export function countWords(text) {
 export function setButtonLoading(button, loading) {
   if (loading) {
     button.disabled = true;
+    try {
+      // Preserve the computed color so the spinner remains visible even when text is hidden
+      const computedColor = (button && typeof window !== 'undefined')
+        ? window.getComputedStyle(button).color
+        : null;
+      if (computedColor) {
+        button.style.setProperty('--btn-loading-color', computedColor);
+        button.dataset.loadingColor = computedColor;
+      }
+    } catch (e) { /* ignore color detection errors */ }
     button.classList.add('btn-loading');
   } else {
     button.disabled = false;
     button.classList.remove('btn-loading');
+    if (button.dataset && button.dataset.loadingColor) {
+      try {
+        button.style.removeProperty('--btn-loading-color');
+      } catch (e) { /* ignore cleanup errors */ }
+      delete button.dataset.loadingColor;
+    }
   }
 }
 
