@@ -2,6 +2,8 @@
 
 Chrome 浏览器扩展，用于快速编写和发布 Deepwhite 11ty 动态日志。
 
+版本：`1.0.0`
+
 ## 安装和测试
 
 ### 1. 加载扩展（开发模式）
@@ -122,8 +124,26 @@ deepwhite-dynamic-publisher/
 
 ## 开发说明
 
-- 当前版本为 **Mock 模式**，发表功能仅模拟，不会真正推送到 GitHub
- - 当前版本为 **模拟发布模式**，发表功能仅模拟，不会真正推送到 GitHub
-- 所有数据存储在 Chrome 的 `chrome.storage` API 中
-- 使用 ES6 模块化开发
-- UI 样式对齐 Deepwhite 站点风格
+- 当前版本：**1.0.0（准备发布）**。已移除开发时的临时代码与调试注释，修复若干关键问题，详见下方变更日志。
+- 所有用户数据仍保存在 Chrome 的 `chrome.storage` API 中（local / sync / IndexedDB 用于句柄持久化）。
+- 使用 ES6 模块化开发，UI 样式对齐 Deepwhite 站点风格。
+
+变更日志（v1.0.0）
+- 升级扩展版本到 `1.0.0`（`manifest.json` / `package.json`）。
+- 修复：在图片粘贴/上传失败分支中可能引用未声明的 `imgName` 导致的 ReferenceError（已将文件名生成提前）。
+- 修复：Service Worker 中窗口定位使用未定义常量的问题（改为从 `windowManager` 获取 PAD 或回退为 24）。
+- 修复：`countWords` 在接收非字符串或 undefined 时可能抛错，现已增加输入保护。
+- 清理：移除不必要的头部/调试注释，仅保留 JSDoc 与必要实现说明以利于可维护性。
+- 其他：增加更稳健的错误提示与用户引导（设置/上传/推送流程）。
+
+注意与建议（发布前）
+- GitHub Token 和 PicGo Token 属敏感信息，发布说明中应提醒用户如何生成并安全存储（本扩展会将 GitHub Token 存入 `chrome.storage.local`）。
+- 文件系统权限与 File System Access API 在不同浏览器/平台支持不完全。建议在发布说明中注明支持环境（Chromium-based 浏览器的较新版本）。
+- 建议在 Chrome Web Store 发布前进行至少一次手动端到端测试（包括：选择本地目录授权、PicGo 上传、GitHub 推送流程）。
+
+发布步骤（简要）
+1. 更新 `manifest.json` 中的 `version` 字段（已完成）。  
+2. 在扩展根目录生成发布 ZIP（包含所有文件，保持相对路径）。  
+3. 登录 Chrome Web Store 开发者后台，上传 ZIP 并填写商店信息（隐私声明需说明 Token 存储与权限用途）。  
+4. 提交审核并根据审查反馈调整权限说明或最小化权限范围（例如仅请求 windows/storage/host_permissions）。  
+5. 发布后建议在 README 中添加变更日志与已知问题列表供用户参考。

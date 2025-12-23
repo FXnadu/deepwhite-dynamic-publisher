@@ -73,8 +73,10 @@
   position: relative;
   background: transparent;
   color: transparent; /* hide plain text so highlight layer shows through */
-  /* Render the text immediately via shadow to avoid perceived typing delay before highlight updates */
-  text-shadow: 0 0 0 var(--color-fg, #111);
+  /* NOTE: removed `text-shadow` (previously used to render textarea text via shadow).
+     That approach forces color glyphs (emoji) to render as monochrome. The overlay
+     highlight layer now renders visible text (including colored emoji), while the
+     textarea keeps focus/caret. */
   caret-color: var(--color-fg, #111); /* caret remains visible */
   z-index: 2;
   resize: none;
@@ -261,8 +263,10 @@
 <style>
 /* Inline interactive empty-state styles to ensure they win over common.css */
 .image-gallery {
-  transition: border-top-color 0.12s ease, background 0.12s ease;
+  transition: border-top-color 0.12s ease, background 0.12s ease,
+              min-height 260ms cubic-bezier(.2,.9,.2,1), padding 160ms ease, box-shadow 220ms ease;
   position: relative; /* allow upload panel to be absolutely positioned (overlay) */
+  will-change: min-height, padding, box-shadow;
 }
 .image-gallery:hover {
   border-top-color: var(--color-text-subtle);
@@ -289,6 +293,34 @@
 .image-gallery.open .empty-placeholder {
   display: flex;
 }
+.image-gallery.open.empty {
+  /* When the gallery is opened but contains no images, ensure the gallery
+     keeps a similar vertical footprint to the populated gallery so the
+     drawer does not appear visually collapsed. */
+  min-height: var(--dw-gallery-open-height, 180px);
+  padding: 10px 10px;
+  align-items: center;
+  justify-content: center;
+  /* subtle elevation on open to signal expansion */
+  box-shadow: none;
+}
+.image-gallery.open .empty-placeholder {
+  /* Make the placeholder occupy available height and center its contents. */
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+.image-gallery.open .empty-hint {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-subtle);
+  font-size: 13px;
+  padding: 0;
+  box-sizing: border-box;
+}
 .image-gallery .empty-box {
   width: 160px;
   height: 100px;
@@ -299,12 +331,13 @@
   justify-content: center;
   color: var(--color-text-subtle);
   background: transparent;
-  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease, transform 220ms cubic-bezier(.2,.9,.2,1);
 }
 .image-gallery .empty-box:hover {
   border-color: var(--color-text-strong);
   color: var(--color-text-strong);
   background: rgba(0,0,0,0.02);
+  transform: translateY(-2px);
 }
 .image-gallery .add-symbol {
   font-size: 36px;
@@ -328,13 +361,14 @@
   right: 0;
   bottom: 100%;
   background: rgba(255,255,255,0.98);
-  box-shadow: 0 -6px 18px rgba(0,0,0,0.06);
+  box-shadow: none;
   border-top: none;
   /* start hidden but present for transitions */
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(12px) scaleY(.98);
   pointer-events: none;
-  transition: transform 220ms cubic-bezier(.2,.9,.2,1), opacity 160ms ease;
+  transition: transform 220ms cubic-bezier(.2,.9,.2,1), opacity 180ms ease;
+  transform-origin: bottom center;
 }
 .image-gallery .upload-panel #uploadStatus {
   color: var(--color-text-subtle);
@@ -342,7 +376,7 @@
 }
 .image-gallery.open .upload-panel {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scaleY(1);
   pointer-events: auto;
 }
 
@@ -351,6 +385,7 @@
   width: 100%;
   height: 18px;
   background: transparent;
+  transition: height 220ms cubic-bezier(.2,.9,.2,1);
 }
 </style>
 </style>
@@ -432,7 +467,7 @@
       </div>
       <div class="footer-right">
         <div class="hint" id="wordCount">0 字符 / 0 字</div>
-        <!-- PicGo 测试按钮已删除以保持页面简洁；如需恢复，请在编辑器模板中添加相应按钮和逻辑 -->
+        
         <button id="openSettings" class="icon-only" title="设置" aria-label="设置">⚙</button>
       </div>
     </div>

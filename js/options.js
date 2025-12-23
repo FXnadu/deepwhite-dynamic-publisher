@@ -1,9 +1,5 @@
 import { showToast, setButtonLoading, parseRepoUrl, getCachedSettings, setCachedSettings, showConfirm } from './utils.js';
-
-const SETTINGS_KEY = "dw_settings_v1";
-const FOLDER_DB_KEY = "dw_folder_handle_v1";
-const TOKEN_KEY = "dw_github_token_v1";
-const PICGO_TOKEN_KEY = "dw_picgo_token_v1";
+import { SETTINGS_KEY, FOLDER_DB_KEY, TOKEN_KEY, PICGO_TOKEN_KEY, HANDLE_CLEARED_KEY } from './constants.js';
 
 async function load() {
   try {
@@ -268,6 +264,7 @@ function normalizeRelativePath(value) {
   if (picgoEndpointInput) picgoEndpointInput.value = s.picgoEndpoint || "";
   if (picgoAutoUploadInput) picgoAutoUploadInput.checked = !!s.picgoAutoUpload;
   if (picgoUploadFormatSelect) picgoUploadFormatSelect.value = s.picgoUploadFormat || 'auto';
+  if (picgoTokenInput) picgoTokenInput.value = s.picgoToken || "";
   updateTargetDirSummary();
   targetDir.addEventListener('input', () => updateTargetDirSummary());
   targetDir.addEventListener('blur', () => {
@@ -287,14 +284,12 @@ function normalizeRelativePath(value) {
 
   // PicGo collapse/expand UI removed — PicGo inputs are visible by default in the main settings area.
 
-  // load token
+  // load GitHub token from local storage; PicGo token is stored in settings (sync)
   try {
     const tokenObj = await chrome.storage.local.get([TOKEN_KEY]);
     githubTokenInput.value = tokenObj[TOKEN_KEY] || "";
-    const picgoObj = await chrome.storage.local.get([PICGO_TOKEN_KEY]);
-    if (picgoTokenInput) picgoTokenInput.value = picgoObj[PICGO_TOKEN_KEY] || "";
   } catch (e) {
-    console.warn("无法加载 token:", e);
+    console.warn("无法加载 GitHub token:", e);
   }
 
   // PicGo connection test handler
@@ -382,7 +377,7 @@ function normalizeRelativePath(value) {
               targetDir.value = normalizedSuggested;
               // Suppress the suggestion if the user recently cleared saved handle.
               try {
-                const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem('dw_handle_cleared_v1') : null;
+                const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(HANDLE_CLEARED_KEY) : null;
                 const clearedAt = raw ? parseInt(raw, 10) : 0;
                 const now = Date.now();
                 const SUPPRESS_WINDOW_MS = 24 * 3600 * 1000; // 24 hours
@@ -427,6 +422,7 @@ function normalizeRelativePath(value) {
       picgoAutoUpload: picgoAutoUploadInput ? !!picgoAutoUploadInput.checked : false,
       picgoUploadFormat: picgoUploadFormatSelect ? (picgoUploadFormatSelect.value || 'auto') : 'auto'
     };
+    
 
     // 验证
     const errors = validateSettings(next);
@@ -438,16 +434,12 @@ function normalizeRelativePath(value) {
     setButtonLoading(saveBtn, true);
     
     try {
+      // include PicGo token inside settings so other contexts read from same place
+      next.picgoToken = picgoTokenInput ? (picgoTokenInput.value || '').trim() : '';
       await setCachedSettings(next);
-      // save token to local (safer than sync)
+      // save GitHub token to local (kept separate for security)
       try {
         await chrome.storage.local.set({ [TOKEN_KEY]: githubTokenInput.value.trim() || "" });
-        // save picgo token locally (if present)
-        try {
-          await chrome.storage.local.set({ [PICGO_TOKEN_KEY]: picgoTokenInput ? (picgoTokenInput.value.trim() || "") : "" });
-        } catch (e) {
-          console.warn("保存 PicGo Token 失败:", e);
-        }
       } catch (e) {
         console.warn("保存 GitHub Token 失败:", e);
       }
@@ -502,7 +494,7 @@ function normalizeRelativePath(value) {
         if (window.saveDirectoryHandle) {
           await window.saveDirectoryHandle(dirHandle);
           // clearing the cleared flag because the user just re-authorized a folder
-          try { if (typeof localStorage !== 'undefined') localStorage.removeItem('dw_handle_cleared_v1'); } catch (e) { /* ignore */ }
+          try { if (typeof localStorage !== 'undefined') localStorage.removeItem(HANDLE_CLEARED_KEY); } catch (e) { /* ignore */ }
         } else {
           // fallback: try storing name in localStorage
           localStorage.setItem(FOLDER_DB_KEY, dirHandle.name || 'selected');
@@ -518,7 +510,7 @@ function normalizeRelativePath(value) {
               updateTargetDirSummary();
               // Don't show suggestion toast if the user recently cleared the saved handle.
               try {
-                const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem('dw_handle_cleared_v1') : null;
+                const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(HANDLE_CLEARED_KEY) : null;
                 const clearedAt = raw ? parseInt(raw, 10) : 0;
                 const now = Date.now();
                 const SUPPRESS_WINDOW_MS = 24 * 3600 * 1000; // suppress for 24 hours after clearing

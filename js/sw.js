@@ -21,53 +21,52 @@ try {
   console.debug("dw-sw: service worker initialized");
 } catch (e) { /* noop */ }
 
-const WIN_KEY = "dw_float_bounds_v1";
-const WIN_ID_KEY = "dw_float_id_v1";
-
-const DEFAULT_WIDTH = 520;
-const DEFAULT_HEIGHT = 680;
-const PAD = 24;
-
-async function getStoredWinId(){
-  const obj = await chrome.storage.local.get([WIN_ID_KEY]);
-  return obj[WIN_ID_KEY] ?? null;
+// Load shared window manager (defines `self.windowManager`)
+try {
+  importScripts('./windowManager.js');
+} catch (e) {
+  // ignore - if importScripts fails, code below will try to access windowManager safely
 }
 
-async function setStoredWinId(id){
-  await chrome.storage.local.set({ [WIN_ID_KEY]: id });
-}
-
-async function getStoredBounds(){
-  const obj = await chrome.storage.local.get([WIN_KEY]);
-  return obj[WIN_KEY] ?? null;
-}
-
-async function saveBounds(bounds){
-  await chrome.storage.local.set({ [WIN_KEY]: bounds });
-}
+// Debounce timer to avoid frequent writes during continuous bounds changes
+let _dw_bounds_save_timer = null;
+const _DW_BOUNDS_DEBOUNCE_MS = 500;
 
 async function focusExisting(){
-  const id = await getStoredWinId();
-  if(id == null) return false;
-  try{
-    const win = await chrome.windows.get(id);
-    if(win?.id != null){
-      await chrome.windows.update(win.id, { focused: true });
-      return true;
+  try {
+    if (typeof self.windowManager === 'object' && typeof self.windowManager.focusExisting === 'function') {
+      return await self.windowManager.focusExisting();
     }
-  }catch(e){
-    await chrome.storage.local.remove([WIN_ID_KEY]);
+    // fallback: perform local logic
+    const idObj = await chrome.storage.local.get(['dw_float_id_v1']);
+    const id = idObj['dw_float_id_v1'] ?? null;
+    if (id == null) return false;
+    try {
+      const win = await chrome.windows.get(id);
+      if (win?.id != null) {
+        await chrome.windows.update(win.id, { focused: true });
+        return true;
+      }
+    } catch (e) {
+      await chrome.storage.local.remove(['dw_float_id_v1']);
+    }
+    return false;
+  } catch (e) {
+    return false;
   }
-  return false;
 }
 
 async function computeCreateData(){
-  const saved = await getStoredBounds();
-  const width = Number.isFinite(saved?.width) ? saved.width : DEFAULT_WIDTH;
-  const height = Number.isFinite(saved?.height) ? saved.height : DEFAULT_HEIGHT;
+  const wm = (typeof self !== 'undefined' && self.windowManager) ? self.windowManager : null;
+  const saved = wm && typeof wm.getStoredBounds === 'function'
+    ? await wm.getStoredBounds()
+    : (await chrome.storage.local.get(['dw_float_bounds_v1']))['dw_float_bounds_v1'] ?? null;
+  const width = Number.isFinite(saved?.width) ? saved.width : (wm && wm.DEFAULT_WIDTH ? wm.DEFAULT_WIDTH : 520);
+  const height = Number.isFinite(saved?.height) ? saved.height : (wm && wm.DEFAULT_HEIGHT ? wm.DEFAULT_HEIGHT : 680);
 
   let left = Number.isFinite(saved?.left) ? saved.left : undefined;
   let top = Number.isFinite(saved?.top) ? saved.top : undefined;
+  const PAD = (wm && typeof wm.PAD === 'number') ? wm.PAD : 24;
   if(left === undefined || top === undefined){
     try{
       const cur = await chrome.windows.getLastFocused();
@@ -97,10 +96,26 @@ async function openFloatingWindow(){
     try {
       const win = await chrome.windows.create(createData);
       if (win?.id == null) throw new Error("windows.create returned no id");
-      await setStoredWinId(win.id);
+      // persist created win id via windowManager if available
+      try {
+        const wm2 = (typeof self !== 'undefined' && self.windowManager) ? self.windowManager : null;
+        if (wm2 && typeof wm2.setStoredWinId === 'function') {
+          await wm2.setStoredWinId(win.id);
+        } else {
+          await chrome.storage.local.set({ ['dw_float_id_v1']: win.id });
+        }
+      } catch (e) { /* ignore */ }
       try {
         const info = await chrome.windows.get(win.id);
-        await saveBounds({ left: info.left, top: info.top, width: info.width, height: info.height });
+        try {
+          const wm3 = (typeof self !== 'undefined' && self.windowManager) ? self.windowManager : null;
+          const bounds = { left: info.left, top: info.top, width: info.width, height: info.height };
+          if (wm3 && typeof wm3.saveBounds === 'function') {
+            await wm3.saveBounds(bounds);
+          } else {
+            await chrome.storage.local.set({ ['dw_float_bounds_v1']: bounds });
+          }
+        } catch (e) { /* ignore */ }
       } catch (e) { /* ignore */ }
     } catch (err) {
       // Some platforms or environments may reject creating popup windows.
@@ -152,19 +167,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 chrome.windows.onRemoved.addListener(async (windowId) => {
-  const storedId = await getStoredWinId();
-  if(storedId === windowId){
-    await chrome.storage.local.remove([WIN_ID_KEY]);
+  try {
+    const wm = (typeof self !== 'undefined' && self.windowManager) ? self.windowManager : null;
+    const storedId = wm && typeof wm.getStoredWinId === 'function' ? await wm.getStoredWinId() : (await chrome.storage.local.get(['dw_float_id_v1']))['dw_float_id_v1'] ?? null;
+    if (storedId === windowId) {
+      if (wm && typeof wm.setStoredWinId === 'function') {
+        try { await wm.setStoredWinId(null); } catch (e) { /* ignore */ }
+      } else {
+        await chrome.storage.local.remove(['dw_float_id_v1']);
+      }
+    }
+  } catch (e) {
+    // noop
   }
 });
 
-chrome.windows.onBoundsChanged.addListener(async (window) => {
-  const storedId = await getStoredWinId();
-  if(storedId === window.id){
-    const { left, top, width, height } = window;
-    if([left, top, width, height].every(Number.isFinite)){
-      const bounds = { left, top, width, height };
-      await saveBounds(bounds);
-    }
+chrome.windows.onBoundsChanged.addListener((window) => {
+  // debounce writes: schedule a save after short inactivity period
+  try {
+    if (_dw_bounds_save_timer) clearTimeout(_dw_bounds_save_timer);
+    _dw_bounds_save_timer = setTimeout(async () => {
+      try {
+        const wm = (typeof self !== 'undefined' && self.windowManager) ? self.windowManager : null;
+        const storedId = wm && typeof wm.getStoredWinId === 'function' ? await wm.getStoredWinId() : (await chrome.storage.local.get(['dw_float_id_v1']))['dw_float_id_v1'] ?? null;
+        if (storedId === window.id) {
+          const { left, top, width, height } = window;
+          if ([left, top, width, height].every(Number.isFinite)) {
+            const bounds = { left, top, width, height };
+            if (wm && typeof wm.saveBounds === 'function') {
+              await wm.saveBounds(bounds);
+            } else {
+              await chrome.storage.local.set({ ['dw_float_bounds_v1']: bounds });
+            }
+          }
+        }
+      } catch (e) {
+        // noop - avoid throwing inside service worker timer
+      }
+    }, _DW_BOUNDS_DEBOUNCE_MS);
+  } catch (e) {
+    // noop
   }
 });

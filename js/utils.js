@@ -1,4 +1,4 @@
-// 工具函数库
+import { SETTINGS_KEY, FOLDER_DB_KEY, HANDLE_CLEARED_KEY } from './constants.js';
 
 /**
  * 显示Toast通知
@@ -396,7 +396,6 @@ export function formatTime(date = new Date()) {
 }
 
 // -------------------------- Settings cache (chrome.storage.sync) --------------------------
-const SETTINGS_KEY = "dw_settings_v1";
 let __settingsCache = null;
 let __settingsPromise = null;
 
@@ -498,11 +497,13 @@ export function countChars(text) {
  * @returns {number}
  */
 export function countWords(text) {
-  if (!text.trim()) return 0;
+  if (!text) return 0;
+  const s = String(text || '');
+  if (!s.trim()) return 0;
   // 中文字符
-  const chineseChars = text.match(/[\u4e00-\u9fa5]/g) || [];
+  const chineseChars = s.match(/[\u4e00-\u9fa5]/g) || [];
   // 英文单词
-  const englishWords = text.replace(/[\u4e00-\u9fa5]/g, '').trim().split(/\s+/).filter(w => w.length > 0);
+  const englishWords = s.replace(/[\u4e00-\u9fa5]/g, '').trim().split(/\s+/).filter(w => w.length > 0);
   return chineseChars.length + englishWords.length;
 }
 
@@ -603,7 +604,7 @@ export async function clearSavedDirectoryHandle() {
       // Also remove legacy/localStorage fallback key if present.
       try {
         if (typeof localStorage !== 'undefined') {
-          localStorage.removeItem('dw_folder_handle_v1');
+          localStorage.removeItem(FOLDER_DB_KEY);
         }
       } catch (e) { /* ignore localStorage errors (e.g., in some secure contexts) */ }
       // Notify other parts of the extension that the handle was cleared.
@@ -621,7 +622,7 @@ export async function clearSavedDirectoryHandle() {
       // immediate follow-up suggestions (user intentionally cleared auth).
       try {
         if (typeof localStorage !== 'undefined') {
-          try { localStorage.setItem('dw_handle_cleared_v1', String(Date.now())); } catch (e) { /* ignore */ }
+          try { localStorage.setItem(HANDLE_CLEARED_KEY, String(Date.now())); } catch (e) { /* ignore */ }
         }
       } catch (e) { /* ignore */ }
       resolve(true);
@@ -655,38 +656,6 @@ export async function saveFileHandle(handle) {
     putReq.onerror = () => reject(putReq.error);
   });
 }
-
-export async function getSavedFileHandle() {
-  try {
-    const db = await openHandleDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(HANDLE_STORE, 'readonly');
-      const store = tx.objectStore(HANDLE_STORE);
-      const getReq = store.get('file');
-      getReq.onsuccess = () => resolve(getReq.result);
-      getReq.onerror = () => reject(getReq.error);
-    });
-  } catch (e) {
-    return null;
-  }
-}
-
-export async function clearSavedFileHandle() {
-  const db = await openHandleDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readwrite');
-    const store = tx.objectStore(HANDLE_STORE);
-    const delReq = store.delete('file');
-    delReq.onsuccess = () => resolve(true);
-    delReq.onerror = () => reject(delReq.error);
-  });
-}
-
-export async function getSavedFileName() {
-  const h = await getSavedFileHandle();
-  return h ? (h.name || '') : '';
-}
-
 /**
  * Try to detect a reasonable targetDir inside the provided DirectoryHandle.
  * Returns the first matching candidate path (string) or empty string if none found.
@@ -813,10 +782,6 @@ if (typeof window !== 'undefined') {
   window.clearSavedDirectoryHandle = clearSavedDirectoryHandle;
   window.getSavedDirectoryName = getSavedDirectoryName;
   window.detectTargetDirFromHandle = detectTargetDirFromHandle;
-  window.saveFileHandle = saveFileHandle;
-  window.getSavedFileHandle = getSavedFileHandle;
-  window.clearSavedFileHandle = clearSavedFileHandle;
-  window.getSavedFileName = getSavedFileName;
 }
 
 // -------------------------- GitHub Contents API helper --------------------------
@@ -827,7 +792,9 @@ if (typeof window !== 'undefined') {
  */
 export async function githubPutFile({ owner, repo, path, branch = 'main', message, contentBase64, token }) {
   if (!token) throw new Error('Missing GitHub token');
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`;
+  // Encode each path segment but preserve '/' so GitHub API receives proper path
+  const encodedPath = String(path || '').split('/').map(encodeURIComponent).join('/');
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}`;
 
   // Try fetch existing file to get sha (if exists)
   let sha = null;
@@ -1039,7 +1006,7 @@ export async function uploadToPicGo(endpoint, blob, token, options = {}) {
         const jbodyText = await jres.text().catch(() => null);
         let jbody = null;
         try { jbody = jbodyText ? JSON.parse(jbodyText) : null; } catch (e) { jbody = jbodyText; }
-        try { console.log('PicGo JSON upload response', { status: jres.status, body: jbody, rawTextLen: jbodyText ? jbodyText.length : 0 }); } catch (e) {}
+        console.log('PicGo JSON upload response', { status: jres.status, body: jbody, rawTextLen: jbodyText ? jbodyText.length : 0 });
         const found = extractUrl(jbody);
         if (found) {
           console.log('uploadToPicGo:found url via JSON upload', found);
@@ -1084,9 +1051,7 @@ export async function uploadToPicGo(endpoint, blob, token, options = {}) {
     console.error('uploadToPicGo fetch error', e);
     throw e;
   }
-  try {
-    console.log('uploadToPicGo:fetch result', { status: res.status, ok: res.ok });
-  } catch (e) {}
+  console.log('uploadToPicGo:fetch result', { status: res.status, ok: res.ok });
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
     // If PicGo responded with an error that indicates it expected clipboard data,
@@ -1116,7 +1081,7 @@ export async function uploadToPicGo(endpoint, blob, token, options = {}) {
   } catch (e) {
     json = await res.json().catch(() => null);
   }
-  try { console.log('uploadToPicGo:response json', json, 'rawTextLen', rawText ? rawText.length : 0); } catch (e) {}
+  console.log('uploadToPicGo:response json', json, 'rawTextLen', rawText ? rawText.length : 0);
 
   let url = extractUrl(json) || null;
   if (!url && rawText) {

@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Deepwhite Dynamic Publisher",
-  "version": "0.6.3",
+  "version": "1.0.0",
   "description": "Lightweight editor for Deepwhite 11ty dynamic journals. UI matches site style.",
   "action": {
-    "default_title": "New Dynamic Journal"
+    "default_title": "New Dynamic Journal",
+    "default_popup": "popup.html"
   },
   "icons": {
     "16": "icons/icon16.png",
