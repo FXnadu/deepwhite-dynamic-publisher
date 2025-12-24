@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
 :root {
   --color-background: #ffffff;
   --color-text: #333333;
@@ -11,11 +13,10 @@
   --color-warning: #f59e0b;
   --color-error: #ef4444;
 
-  --font-family-sans-latin: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  --font-family-sans-latin: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
-  --font-family-sans-cjk: "HarmonyOS Sans SC", "Source Han Sans SC", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", sans-serif;
+  --font-family-sans-latin: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  --font-family-sans-cjk: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
   --font-family-sans: var(--font-family-sans-latin), var(--font-family-sans-cjk);
-  --font-family-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  --font-family-mono: "JetBrains Mono", "Consolas", "Courier New", monospace;
 
   --radius-sm: 8px;
   --radius-md: 14px;
@@ -120,25 +121,15 @@ a:hover {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-family: inherit;
-  transition: transform var(--transition-base), background-color var(--transition-base), 
-              border-color var(--transition-base), box-shadow var(--transition-base), 
-              color var(--transition-base), opacity var(--transition-fast);
+  transition: background-color var(--transition-base), 
+              border-color var(--transition-base), 
+              color var(--transition-base), 
+              opacity var(--transition-fast);
   white-space: nowrap;
-}
-
-.btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: var(--color-border);
-  background: var(--color-code-bg);
 }
 
 .btn:active:not(:disabled) {
   transform: translateY(0);
-}
-
-.btn:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
 }
 
 .btn:disabled {
@@ -153,7 +144,6 @@ a:hover {
 .btn-primary:hover:not(:disabled) {
   background: var(--color-text-strong);
   color: var(--color-background);
-  box-shadow: var(--shadow-md);
 }
 
 .btn-danger {

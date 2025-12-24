@@ -19,7 +19,7 @@ Chrome 浏览器扩展，用于快速编写和发布 Deepwhite 11ty 动态日志
 
 #### 测试图标点击
 1. 点击浏览器工具栏中的扩展图标
-2. 应该会直接打开编辑器浮窗窗口（无需经过弹出层）
+2. 应该会直接打开编辑器浮窗窗口
 3. 如果浮窗已存在，应自动聚焦到该窗口
 
 #### 测试 Editor 页面
@@ -108,17 +108,17 @@ chrome.storage.sync.clear();
 ```
 deepwhite-dynamic-publisher/
 ├── manifest.json          # 扩展配置文件
-├── popup.html            # 备用弹出页面（当前点击图标直接打开编辑器）
 ├── editor.html           # 编辑器页面
 ├── options.html          # 设置页面
 ├── css/
 │   └── common.css        # 公共样式
 ├── js/
 │   ├── utils.js          # 工具函数
-│   ├── popup.js          # 弹出窗口逻辑（备用）
 │   ├── editor.js         # 编辑器逻辑
 │   ├── options.js        # 设置页面逻辑
-│   └── sw.js             # Service Worker
+│   ├── open.js           # 编辑器打开逻辑
+│   ├── windowManager.js  # 窗口管理
+│   └── sw.js             # Service Worker（处理图标点击）
 └── icons/                # 图标文件
 ```
 

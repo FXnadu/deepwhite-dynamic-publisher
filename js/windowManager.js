@@ -5,22 +5,49 @@
   const DEFAULT_HEIGHT = 680;
   const PAD = 24;
 
+  // 导入封装的存储函数（如果在模块环境中）
+  // 由于这是 IIFE，我们保持原有实现，但可以考虑重构为 ES6 模块
+  
   async function getStoredWinId() {
-    const obj = await chrome.storage.local.get([WIN_ID_KEY]);
-    return obj[WIN_ID_KEY] ?? null;
+    try {
+      const obj = await chrome.storage.local.get([WIN_ID_KEY]);
+      return obj[WIN_ID_KEY] ?? null;
+    } catch (e) {
+      console.error("获取窗口 ID 失败:", e);
+      return null;
+    }
   }
 
   async function setStoredWinId(id) {
-    await chrome.storage.local.set({ [WIN_ID_KEY]: id });
+    try {
+      if (id === null || id === undefined) {
+        await chrome.storage.local.remove([WIN_ID_KEY]);
+      } else {
+        await chrome.storage.local.set({ [WIN_ID_KEY]: id });
+      }
+    } catch (e) {
+      console.error("保存窗口 ID 失败:", e);
+      throw e;
+    }
   }
 
   async function getStoredBounds() {
-    const obj = await chrome.storage.local.get([WIN_KEY]);
-    return obj[WIN_KEY] ?? null;
+    try {
+      const obj = await chrome.storage.local.get([WIN_KEY]);
+      return obj[WIN_KEY] ?? null;
+    } catch (e) {
+      console.error("获取窗口位置失败:", e);
+      return null;
+    }
   }
 
   async function saveBounds(bounds) {
-    await chrome.storage.local.set({ [WIN_KEY]: bounds });
+    try {
+      await chrome.storage.local.set({ [WIN_KEY]: bounds });
+    } catch (e) {
+      console.error("保存窗口位置失败:", e);
+      throw e;
+    }
   }
 
   async function focusExisting() {

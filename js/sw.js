@@ -9,17 +9,8 @@ function ensureActionHasNoPopup() {
 ensureActionHasNoPopup();
 
 chrome.runtime.onInstalled.addListener((details) => {
-  // Log install/update details to help debug unexpected behavior after reloads/updates
-  try {
-    console.info("dw-sw: onInstalled", details);
-  } catch (e) { /* noop */ }
   ensureActionHasNoPopup();
 });
-
-// Helpful debug log when the service worker starts up. Keep lightweight.
-try {
-  console.debug("dw-sw: service worker initialized");
-} catch (e) { /* noop */ }
 
 // Load shared window manager (defines `self.windowManager`)
 try {
@@ -154,7 +145,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // This avoids accidental opens if a foreign extension or page tries to send messages.
     try {
       if (sender && typeof sender.id === "string" && sender.id !== chrome.runtime.id) {
-        try { console.warn("dw-sw: rejected dw-open-floating from foreign sender", sender); } catch (e) { /* noop */ }
         sendResponse({ ok: false, reason: "forbidden-sender" });
         return;
       }

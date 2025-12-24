@@ -1,0 +1,229 @@
+/* Editor page specific styles */
+
+/* Container and layout */
+.container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  max-width: 100%;
+}
+
+.header {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--color-border);
+  position: relative;
+}
+
+.card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.card-top {
+  flex-shrink: 0;
+  padding: 10px 14px;
+}
+
+.card textarea {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  padding: 16px;
+  font-size: 14px;
+  resize: none;
+}
+
+/* Editor wrapper and syntax highlighting */
+.editor-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-wrapper .highlight {
+  position: absolute;
+  inset: 0;
+  padding: 16px;
+  margin: 0;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  font-family: inherit;
+  color: var(--color-fg, #111);
+  letter-spacing: normal;
+  overflow: auto;
+}
+
+.editor-wrapper textarea {
+  position: relative;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--color-fg, #111);
+  z-index: 2;
+  resize: none;
+  padding: 16px;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  line-height: 1.4;
+  font-family: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+  letter-spacing: normal;
+  overflow: auto;
+}
+
+/* Markdown syntax highlighting */
+.md-sym.md-heading {
+  color: #1e88e5;
+  font-weight: 600;
+}
+
+.md-code {
+  color: #6a1b9a;
+  background: rgba(106,27,154,0.06);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.md-sym.md-bold {
+  color: #e65100;
+  font-weight: 600;
+}
+
+.md-link {
+  color: #0b8043;
+}
+
+.md-image {
+  color: #d81b60;
+}
+
+/* Footer */
+.footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.footer-left,
+.footer-center,
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.footer-center {
+  flex: 1;
+  justify-content: center;
+}
+
+#wordCount {
+  font-weight: 500;
+}
+
+.shortcuts-hint {
+  font-size: 11px;
+  color: var(--color-meta);
+  margin-top: 4px;
+}
+
+/* Publish button and header actions */
+#publishAndPush {
+  min-width: 120px;
+  padding: 8px 14px;
+  border-radius: 999px;
+}
+
+.header .actions {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-rounded {
+  border-radius: 999px;
+  padding: 6px 10px;
+  transition: box-shadow 120ms ease, transform 120ms ease;
+}
+
+/* Icon button alignment */
+.icon-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  line-height: 1;
+  padding: 0 6px;
+}
+
+/* Header layout */
+.header-content {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+/* Card top layout */
+.card-top-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Responsive styles */
+@media (max-width: 640px) {
+  .header .actions {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    z-index: 1300;
+    background: transparent;
+    padding: 0;
+    border-radius: 6px;
+  }
+
+  #publishAndPush {
+    border-radius: 999px;
+    padding: 8px 14px;
+    box-shadow: none;
+    transition: box-shadow 160ms ease, transform 160ms ease;
+    min-width: 120px;
+  }
+  
+  #publishAndPush:hover {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    transform: none;
+  }
+}
